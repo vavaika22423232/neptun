@@ -22,6 +22,7 @@ const CACHE_KEY = 'neptun_markers_cache';
 // Boot cache is only for a fast first paint. Mobile/WebView tabs can start as
 // hidden, so an old localStorage snapshot must never replace a fresh server load.
 const BOOT_CACHE_MAX_AGE = 90_000;
+const FRESH_CLIENT_MARKER_GRACE_MS = 90_000;
 
 /** Prefer server display_* from SSE (matches /api/data); else local policy with defaults. */
 function applyDisplayPolicyFromSsePayload(target: Marker, markerData: Record<string, unknown>): void {
@@ -120,6 +121,44 @@ function setCachedMarkers(data: Marker[]) {
 
 function delay(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function markerIdentity(marker: Pick<Marker, 'id' | 'track_id' | 'lat' | 'lng' | 'threat_type'>): string {
+  const tid = marker.track_id != null && String(marker.track_id).trim().length > 0 ? String(marker.track_id).trim() : '';
+  if (tid) return `t:${tid}`;
+  const id = marker.id != null && String(marker.id).trim().length > 0 ? String(marker.id).trim() : '';
+  if (id) return `i:${id}`;
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `p:${lat.toFixed(3)}_${lng.toFixed(3)}_${marker.threat_type || 'x'}`;
+  }
+  return '';
+}
+
+function mergeSnapshotWithFreshClientMarkers(snapshot: Marker[], previous: Marker[], nowMs = Date.now()): Marker[] {
+  if (previous.length === 0) return snapshot;
+
+  const snapshotKeys = new Set(snapshot.map(markerIdentity).filter(Boolean));
+  const merged = [...snapshot];
+
+  for (const marker of previous) {
+    const key = markerIdentity(marker);
+    if (!key || snapshotKeys.has(key)) continue;
+
+    const lastUpdate = normalizeEpochMs(
+      marker.last_update_epoch ??
+      marker.last_observation_epoch ??
+      marker.created_at_epoch ??
+      marker.date,
+    );
+    if (nowMs - lastUpdate <= FRESH_CLIENT_MARKER_GRACE_MS) {
+      merged.push(marker);
+      snapshotKeys.add(key);
+    }
+  }
+
+  return merged;
 }
 
 function readInitialMarkers(): Marker[] {
@@ -274,9 +313,12 @@ export function useMarkers(bootstrap?: UseMarkersBootstrap) {
         markersDataVersionRef.current = mv;
       }
 
-      setCachedMarkers(items);
       hasFetchedSnapshotRef.current = true;
-      setMarkers(items);
+      setMarkers((prev) => {
+        const merged = mergeSnapshotWithFreshClientMarkers(items, prev);
+        setCachedMarkers(merged);
+        return merged;
+      });
     };
 
     try {
@@ -447,6 +489,15 @@ export function useMarkers(bootstrap?: UseMarkersBootstrap) {
   const sseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useMarkerSSE(useCallback((data: Record<string, unknown>) => {
+    // After admin delete, marker_delete already removed locally; refetch can resurrect
+    // stale rows from another PM2 worker before destroyed_tracks propagates.
+    if (data?.reason === 'admin_delete') {
+      if (sseTimerRef.current) {
+        clearTimeout(sseTimerRef.current);
+        sseTimerRef.current = null;
+      }
+      return;
+    }
     const appliedDirectly = upsertMarkerFromSse(data);
     if (sseTimerRef.current) clearTimeout(sseTimerRef.current);
     sseTimerRef.current = setTimeout(() => {
@@ -457,7 +508,7 @@ export function useMarkers(bootstrap?: UseMarkersBootstrap) {
 
   // Marker delete SSE — remove immediately (no refetch, avoids stale data from other PM2 workers)
   useMarkerDeleteSSE(useCallback((deletedId: string) => {
-    setMarkers((prev) => prev.filter((m) => m.id !== deletedId));
+    setMarkers((prev) => prev.filter((m) => m.id !== deletedId && m.track_id !== deletedId));
   }, []));
 
   // Track update SSE — apply delta directly to local state without refetch

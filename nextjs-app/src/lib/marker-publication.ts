@@ -2,33 +2,12 @@
  * Single place for “should this raw store row appear on the public map?” vs “should ingest broadcast it?”.
  * Keeps SSE / build-markers / confidence math aligned.
  */
-import type { AdminSettings } from '@/lib/admin/data';
-import { loadHidden, loadSettings } from '@/lib/admin/data';
+import { isTrackAdminDestroyed, loadSettings, type AdminSettings } from '@/lib/admin/data';
+import { recordHasPhantomAvia } from '@/lib/corroboration-public-gate';
 import { isPlausibleThreatCoordinate } from '@/lib/geo-bounds';
-import { isAdjacentUaMaritimeThreatGeography, isPublicMapThreatGeography } from '@/lib/public-threat-geo';
-import { evaluateMarkerPublication } from '@/lib/public-marker-policy';
-import {
-  UAV_PUBLICATION_TYPES as _UAV_TYPES,
-  NON_PUBLIC_RESOLVE_STATUSES,
-  BAD_PLACE_TOKENS,
-  recordHasPhantomAvia as _recordHasPhantomAvia,
-} from '@/lib/publication-constants';
-
-export { NON_PUBLIC_RESOLVE_STATUSES, BAD_PLACE_TOKENS };
-
-/** @deprecated Import from publication-constants directly to avoid circular deps. */
-export const recordHasPhantomAvia = _recordHasPhantomAvia;
 
 /** Confidence used for thresholding when field missing (not 100%). */
 export function effectiveMarkerConfidence(marker: Record<string, unknown>, minConf: number): number {
-  if (
-    typeof marker.target_lifecycle_state === 'string' &&
-    marker.target_lifecycle_state.trim() &&
-    typeof marker.target_confidence === 'number' &&
-    Number.isFinite(marker.target_confidence)
-  ) {
-    return Math.min(1, Math.max(0, marker.target_confidence));
-  }
   if (typeof marker.confidence === 'number' && Number.isFinite(marker.confidence)) {
     return Math.min(1, Math.max(0, marker.confidence));
   }
@@ -42,26 +21,6 @@ export function effectiveMarkerConfidence(marker: Record<string, unknown>, minCo
 /** @deprecated use effectiveMarkerConfidence */
 export const effectiveIngestConfidence = effectiveMarkerConfidence;
 
-const UAV_PUBLICATION_TYPES = _UAV_TYPES;
-
-export function isUavClassThreatType(threatType: string | undefined): boolean {
-  return UAV_PUBLICATION_TYPES.has(String(threatType || '').toLowerCase());
-}
-
-/** Effective confidence threshold for publication / SSE (per marker type). */
-export function publicationMinConfidence(marker: Record<string, unknown>, settings: AdminSettings): number {
-  const base = settings.minConfidence ?? 0.65;
-  const uavFloor = settings.minConfidenceUav;
-  if (
-    typeof uavFloor === 'number' &&
-    Number.isFinite(uavFloor) &&
-    isUavClassThreatType(marker.threat_type as string | undefined)
-  ) {
-    return uavFloor;
-  }
-  return base;
-}
-
 export function markerBlockedByPlacementMode(marker: Record<string, unknown>): boolean {
   const pm = typeof marker.placement_mode === 'string' ? marker.placement_mode : '';
   return (
@@ -71,116 +30,14 @@ export function markerBlockedByPlacementMode(marker: Record<string, unknown>): b
   );
 }
 
-
-function normalizePlaceToken(value: unknown): string {
-  return String(value || '')
-    .normalize('NFKC')
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s'ʼ-]/gu, '')
-    .replace(/\s+/g, ' ');
-}
-
-function candidateCount(marker: Record<string, unknown>): number {
-  if (typeof marker.candidates_count === 'number' && Number.isFinite(marker.candidates_count)) {
-    return Math.max(0, marker.candidates_count);
-  }
-  return Array.isArray(marker.candidates) ? marker.candidates.length : 0;
-}
-
-export function markerHasAmbiguousGeocode(marker: Record<string, unknown>): boolean {
-  const tier = normalizePlaceToken(marker.geocode_tier);
-  if (tier === 'multi' || tier === 'ambiguous') return true;
-  if (candidateCount(marker) > 1) return true;
-
-  const rs = normalizePlaceToken(marker.resolve_status).replace(/\s+/g, '_');
-  if (NON_PUBLIC_RESOLVE_STATUSES.has(rs)) return true;
-  return rs.includes('ambiguous') || rs.includes('multi');
-}
-
-export function markerHasNonPublicPlaceLabel(marker: Record<string, unknown>): boolean {
-  const place = normalizePlaceToken(marker.place || marker.city || marker.location);
-  if (!place) return false;
-  if (BAD_PLACE_TOKENS.has(place)) return true;
-
-  const compact = place.replace(/[\s'ʼ-]+/g, '');
-  if (BAD_PLACE_TOKENS.has(compact)) return true;
-  return compact.length < 3 && !/^\d+$/.test(compact);
-}
-
-export function markerBlockedByPublicPlacementQuality(marker: Record<string, unknown>): boolean {
-  const pm = normalizePlaceToken(marker.placement_mode);
-  if (pm === 'trajectory_dead_reckoning') return false;
-  if (pm === 'approximate') return marker.position_estimated !== true;
-  if (pm === 'predictive') return false;
-  if (markerHasAmbiguousGeocode(marker)) return true;
-  if (markerHasNonPublicPlaceLabel(marker)) return true;
-  return false;
-}
-
-function markerHasMaritimeEvidence(marker: Record<string, unknown>): boolean {
-  const haystack = [
-    marker.place,
-    marker.city,
-    marker.location,
-    marker.region,
-    marker.resolve_status,
-    marker.placement_mode,
-    marker.text,
-  ].map(normalizePlaceToken).join(' ');
-  return /чорн\w*\s+мор|black\s*sea|азов\w*\s+мор|акватор|морськ|maritime|offshore|sea/.test(haystack);
-}
-
-/**
- * True when the marker has a non-maritime land place name (Odesa, Kherson, etc.).
- * A real Ukrainian city name is sufficient to establish that the marker is land-based
- * even when its coordinates fall inside the maritime bounding box.
- */
-function markerHasLandPlaceEvidence(marker: Record<string, unknown>): boolean {
-  const place = normalizePlaceToken(marker.place || marker.city || marker.location);
-  if (!place || place.length < 3) return false;
-  // Maritime place names are not land evidence
-  if (/чорн\w*\s+мор|black\s*sea|азов\w*\s+мор|акватор|морськ|maritime|offshore|^море$|\bачм\b/.test(place)) return false;
-  if (BAD_PLACE_TOKENS.has(place)) return false;
-  return true;
-}
-
-export function markerBlockedByUnevidencedMaritimePoint(marker: Record<string, unknown>): boolean {
-  const lat = Number(marker.lat);
-  const lng = Number(marker.lng);
-  if (!isAdjacentUaMaritimeThreatGeography(lat, lng)) return false;
-  // High-latitude points are more likely on land (Mykolaiv ~47°N, etc.)
-  if (lat > 46.7) return false;
-  // Odesa (~46.48°N) and Kherson (~46.64°N) fall below the lat guard but are land cities.
-  // A non-maritime place name is authoritative evidence that the marker is land-based.
-  if (markerHasLandPlaceEvidence(marker)) return false;
-  return !markerHasMaritimeEvidence(marker);
-}
-
 export function markerBlockedByTrackState(marker: Record<string, unknown>): boolean {
   if (Boolean(marker.manual)) return false;
   const state = marker.track_state;
-  // «lost» — знімаємо з карти; «split_candidate» — сумнівна геометрія.
-  if (state === 'lost' || state === 'split_candidate') return true;
-  
-  // «stale» / «extrapolated»: даємо більше часу на карті навіть при низькому visualConfidence
-  const isPredictive = state === 'stale' || state === 'extrapolated';
+  if (state === 'lost' || state === 'stale' || state === 'split_candidate') return true;
+
   const trackConfidence = marker.track_confidence;
-  
   if (typeof trackConfidence === 'number' && Number.isFinite(trackConfidence)) {
-    const targetConfidence = typeof marker.target_confidence === 'number' && Number.isFinite(marker.target_confidence)
-      ? marker.target_confidence
-      : 0;
-    if (
-      isPredictive &&
-      targetConfidence >= 0.88 &&
-      isUavClassThreatType(marker.threat_type as string | undefined)
-    ) {
-      return false;
-    }
-    // Для екстрапольованих треків поріг нижчий (0.38), щоб не блимало при переході з observed
-    const threshold = isPredictive ? 0.38 : 0.5;
-    return trackConfidence < threshold;
+    return trackConfidence < 0.5;
   }
 
   return false;
@@ -190,19 +47,8 @@ export function markerBlockedByDualSourcePending(
   marker: Record<string, unknown>,
   dualSourceMapGate: boolean,
 ): boolean {
-  // If the dual source gate is globally OFF in admin settings, we don't block
-  // ordinary markers for being single-source.
-  // HOWEVER, phantom avia (synthetic evidence) ALWAYS requires corroboration.
   const phantomAvia = recordHasPhantomAvia(marker);
-  if (!phantomAvia && !dualSourceMapGate) return false;
-
-  const confidence = typeof marker.target_confidence === 'number' && Number.isFinite(marker.target_confidence)
-    ? marker.target_confidence
-    : typeof marker.confidence === 'number'
-      ? marker.confidence
-      : 0;
-  if (confidence >= 0.88 && isUavClassThreatType(marker.threat_type as string)) return false;
-
+  if (dualSourceMapGate !== true && !phantomAvia) return false;
   return marker.corroboration_pending === true || !markerHasDualSourceCorroboration(marker);
 }
 
@@ -243,90 +89,29 @@ export function markerExcludedByHiddenForPublicMap(
 ): boolean {
   if (marker.hidden !== true) return false;
   const phantomAvia = recordHasPhantomAvia(marker);
-  
-  // If dual gate is ON, we definitely exclude markers marked as hidden/pending
-  if (dualSourceMapGate) return true;
-
-  const legacyDualOnly = !phantomAvia && marker.corroboration_pending === true;
-  return !legacyDualOnly;
+  const staleDualOnly =
+    !dualSourceMapGate && !phantomAvia && marker.corroboration_pending === true;
+  return !staleDualOnly;
 }
 
-function normalizeHiddenText(value: unknown): string {
-  return String(value || '')
-    .replace(/[^a-zA-Zа-яА-ЯіІїЇєЄ0-9]/g, '')
-    .toLowerCase()
-    .slice(0, 30);
-}
-
-function parseHiddenEntry(entry: string): { lat: number; lng: number; text: string; source: string } | null {
-  const [coordPart, text = '', source = ''] = String(entry || '').split('|');
-  const [latRaw, lngRaw] = coordPart.split(',');
-  const lat = Number(latRaw);
-  const lng = Number(lngRaw);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { lat, lng, text, source };
-}
-
-function markerMatchesHiddenEntry(marker: Record<string, unknown>, entry: string): boolean {
-  const parsed = parseHiddenEntry(entry);
-  if (!parsed) return false;
-
-  const lat = Number(marker.lat);
-  const lng = Number(marker.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-
-  const source = marker.manual ? 'manual' : 'auto';
-  if (parsed.source && parsed.source !== source) return false;
-
-  // Ticker / spatial merge can move a marker slightly between admin click and next snapshot.
-  if (Math.abs(lat - parsed.lat) >= 0.05 || Math.abs(lng - parsed.lng) >= 0.05) return false;
-
-  const hiddenText = normalizeHiddenText(parsed.text);
-  if (!hiddenText) return true;
-  const markerText = normalizeHiddenText(marker.text);
-  if (!markerText) return false;
-  return markerText.includes(hiddenText) || hiddenText.includes(markerText);
-}
-
-export function markerExcludedByHiddenList(
+export function ingestShouldBroadcastMarker(
   marker: Record<string, unknown>,
-  hiddenSet: Set<string>,
+  minConf: number,
 ): boolean {
-  const exactKey = `${marker.lat},${marker.lng}|${marker.text || ''}|${marker.manual ? 'manual' : 'auto'}`;
-  if (hiddenSet.has(exactKey)) return true;
-  for (const entry of hiddenSet) {
-    if (markerMatchesHiddenEntry(marker, entry)) return true;
-  }
-  return false;
-}
-
-export function ingestShouldBroadcastMarker(marker: Record<string, unknown>): boolean {
   if (Boolean(marker.manual)) return true;
-  const lat = Number(marker.lat);
-  const lng = Number(marker.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-  if (!isPlausibleThreatCoordinate(lat, lng)) return false;
-  if (!isPublicMapThreatGeography(lat, lng)) return false;
-  if (markerBlockedByUnevidencedMaritimePoint(marker)) return false;
-
   const s = loadSettings();
-  let hidden = false;
-  try {
-    hidden = markerExcludedByHiddenList(marker, new Set(loadHidden()));
-  } catch { /* hidden list is best-effort */ }
-  const decision = evaluateMarkerPublication(marker, { settings: s, hidden });
-  if (!decision.public) return false;
   if (markerBlockedByDualSourcePending(marker, s.dualSourceMapGate === true)) return false;
   if (marker.hidden === true) return false;
   if (markerBlockedByTrackState(marker)) return false;
   if (markerBlockedByPlacementMode(marker)) return false;
-  if (markerBlockedByPublicPlacementQuality(marker)) return false;
-  const thresh = publicationMinConfidence(marker, s);
-  return effectiveMarkerConfidence(marker, thresh) >= thresh;
+  return effectiveMarkerConfidence(marker, minConf) >= minConf;
 }
 
 export type PublicMapRawFilterContext = {
-  settings: AdminSettings;
+  minConf?: number;
+  dualSourceMapGate?: boolean;
+  /** Newer admin diagnostics pass the full settings object; keep old map logic as source of truth. */
+  settings?: AdminSettings;
   ttlEnabled: boolean;
   cutoffMs: number;
   hiddenSet: Set<string>;
@@ -339,6 +124,17 @@ export type PublicMapRawFilterDecision = {
   reason: string;
   details?: Record<string, unknown>;
 };
+
+function contextMinConfidence(ctx: PublicMapRawFilterContext): number {
+  if (typeof ctx.minConf === 'number' && Number.isFinite(ctx.minConf)) return ctx.minConf;
+  const fromSettings = ctx.settings?.minConfidence;
+  return typeof fromSettings === 'number' && Number.isFinite(fromSettings) ? fromSettings : 0.65;
+}
+
+function contextDualSourceMapGate(ctx: PublicMapRawFilterContext): boolean {
+  if (typeof ctx.dualSourceMapGate === 'boolean') return ctx.dualSourceMapGate;
+  return ctx.settings?.dualSourceMapGate === true;
+}
 
 /** Observation / message time for TTL (same semantics as build-markers). */
 export function parseRawMarkerMessageTimeMs(m: Record<string, unknown>): number {
@@ -373,7 +169,18 @@ export function parseRawMarkerMessageTimeMs(m: Record<string, unknown>): number 
 }
 
 /**
- * Whether a tracked target record should pass into the public map pipeline (before dedupe / display policy).
+ * Whether a raw markers-store row should pass into the public map pipeline (before dedupe / display policy).
+ */
+export function markerPassesPublicMapRawFilter(
+  m: Record<string, unknown>,
+  ctx: PublicMapRawFilterContext,
+): boolean {
+  return explainPublicMapRawFilter(m, ctx).passes;
+}
+
+/**
+ * Diagnostic form of the raw public map filter. This intentionally mirrors the
+ * restored pre-V4 boolean filter instead of reintroducing tracker scoring.
  */
 export function explainPublicMapRawFilter(
   m: Record<string, unknown>,
@@ -382,136 +189,62 @@ export function explainPublicMapRawFilter(
   const lat = Number(m.lat);
   const lng = Number(m.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return { passes: false, reason: 'invalid_coordinates', details: { lat: m.lat, lng: m.lng } };
+    return { passes: false, reason: 'invalid_coordinate', details: { lat: m.lat, lng: m.lng } };
   }
   if (!isPlausibleThreatCoordinate(lat, lng, { allowOutsideThreatRegion: Boolean(m.manual) })) {
-    return { passes: false, reason: 'implausible_coordinates', details: { lat, lng, manual: Boolean(m.manual) } };
+    return { passes: false, reason: 'outside_threat_bounds', details: { lat, lng } };
   }
-
-  if (markerExcludedByHiddenList(m, ctx.hiddenSet)) {
-    return { passes: false, reason: 'hidden_list', details: { hidden_entries: ctx.hiddenSet.size } };
-  }
-
-  if (m.manual) return { passes: true, reason: 'manual_public', details: { lat, lng } };
-
-  if (!isPublicMapThreatGeography(lat, lng)) {
-    return { passes: false, reason: 'outside_public_threat_geography', details: { lat, lng } };
-  }
-  if (markerBlockedByUnevidencedMaritimePoint(m)) {
-    return {
-      passes: false,
-      reason: 'unevidenced_maritime_point',
-      details: { lat, lng, place: m.place, region: m.region, resolve_status: m.resolve_status },
-    };
-  }
+  if (m.manual) return { passes: true, reason: 'manual_marker' };
 
   if (ctx.ttlEnabled && ctx.cutoffMs > 0) {
     const msgTime = ctx.messageTimeMs;
     if (msgTime < 0) {
-      return { passes: false, reason: 'ttl_missing_message_time', details: { cutoff_ms: ctx.cutoffMs } };
+      return { passes: false, reason: 'missing_observation_time', details: { cutoffMs: ctx.cutoffMs } };
     }
     if (msgTime > 0 && msgTime < ctx.cutoffMs) {
       return {
         passes: false,
-        reason: 'ttl_expired',
-        details: { message_time_ms: msgTime, cutoff_ms: ctx.cutoffMs, age_ms: Date.now() - msgTime },
+        reason: 'stale_observation',
+        details: { messageTimeMs: msgTime, cutoffMs: ctx.cutoffMs },
       };
     }
   }
 
-  const dualGate = ctx.settings.dualSourceMapGate === true;
-  if (markerBlockedByDualSourcePending(m, dualGate)) {
-    return {
-      passes: false,
-      reason: 'dual_source_pending',
-      details: {
-        dual_gate: dualGate,
-        corroboration_pending: m.corroboration_pending === true,
-        source_count: m.source_count,
-        observations: Array.isArray(m.observations) ? m.observations.length : 0,
-        target_confidence: m.target_confidence,
-        confidence: m.confidence,
-      },
-    };
+  const trackId = m.track_id != null ? String(m.track_id).trim() : '';
+  if (trackId && isTrackAdminDestroyed(trackId)) {
+    return { passes: false, reason: 'destroyed_by_admin', details: { trackId } };
   }
 
-  if (markerExcludedByHiddenForPublicMap(m, dualGate)) {
-    return { passes: false, reason: 'hidden_marker', details: { hidden: m.hidden, dual_gate: dualGate } };
+  const hiddenKey = `${m.lat},${m.lng}|${m.text || ''}|${m.manual ? 'manual' : 'auto'}`;
+  if (ctx.hiddenSet.has(hiddenKey)) {
+    return { passes: false, reason: 'hidden_by_admin', details: { hiddenKey } };
+  }
+
+  const dualSourceMapGate = contextDualSourceMapGate(ctx);
+  if (markerBlockedByDualSourcePending(m, dualSourceMapGate)) {
+    return { passes: false, reason: 'dual_source_pending' };
+  }
+
+  if (markerExcludedByHiddenForPublicMap(m, dualSourceMapGate)) {
+    return { passes: false, reason: 'hidden_marker' };
   }
 
   if (markerBlockedByTrackState(m)) {
     return {
       passes: false,
-      reason: 'track_state_blocked',
-      details: {
-        track_state: m.track_state,
-        track_confidence: m.track_confidence,
-        target_confidence: m.target_confidence,
-        threat_type: m.threat_type,
-      },
+      reason: 'blocked_track_state',
+      details: { track_state: m.track_state, track_confidence: m.track_confidence },
     };
   }
 
   if (markerBlockedByPlacementMode(m)) {
-    return {
-      passes: false,
-      reason: 'placement_mode_blocked',
-      details: { placement_mode: m.placement_mode, resolve_status: m.resolve_status },
-    };
-  }
-  if (markerBlockedByPublicPlacementQuality(m)) {
-    return {
-      passes: false,
-      reason: 'public_placement_quality_blocked',
-      details: {
-        placement_mode: m.placement_mode,
-        resolve_status: m.resolve_status,
-        geocode_tier: m.geocode_tier,
-        candidates_count: candidateCount(m),
-        place: m.place || m.city || m.location,
-      },
-    };
+    return { passes: false, reason: 'blocked_placement_mode', details: { placement_mode: m.placement_mode } };
   }
 
-  const decision = evaluateMarkerPublication(m, { settings: ctx.settings, hidden: false });
-  if (!decision.public) {
-    return {
-      passes: false,
-      reason: 'publication_not_public',
-      details: {
-        class: decision.classification,
-        score: decision.score,
-        reasons: decision.reasons,
-        invariant_violations: decision.invariantViolations,
-      },
-    };
+  const minConf = contextMinConfidence(ctx);
+  const confidence = effectiveMarkerConfidence(m, minConf);
+  if (confidence < minConf) {
+    return { passes: false, reason: 'low_confidence', details: { confidence, minConfidence: minConf } };
   }
-
-  const thresh = publicationMinConfidence(m, ctx.settings);
-  const confidence = effectiveMarkerConfidence(m, thresh);
-  if (confidence < thresh) {
-    return {
-      passes: false,
-      reason: 'confidence_below_threshold',
-      details: { confidence, threshold: thresh, target_confidence: m.target_confidence, raw_confidence: m.confidence },
-    };
-  }
-  return {
-    passes: true,
-    reason: 'public',
-    details: {
-      confidence,
-      threshold: thresh,
-      publication_class: decision.classification,
-      publication_score: decision.score,
-      message_time_ms: ctx.messageTimeMs,
-    },
-  };
-}
-
-export function markerPassesPublicMapRawFilter(
-  m: Record<string, unknown>,
-  ctx: PublicMapRawFilterContext,
-): boolean {
-  return explainPublicMapRawFilter(m, ctx).passes;
+  return { passes: true, reason: 'ok', details: { confidence, minConfidence: minConf } };
 }

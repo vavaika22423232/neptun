@@ -6,6 +6,11 @@ import crypto from 'crypto';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 const HIDDEN_FILE = path.join(DATA_DIR, 'hidden.json');
+const DESTROYED_TRACKS_MAX = 8_000;
+
+function destroyedTracksFile(): string {
+  return path.join(process.env.DATA_DIR || DATA_DIR, 'destroyed_tracks.json');
+}
 const BLOCKED_FILE = path.join(DATA_DIR, 'blocked.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'admin_settings.json');
 const CHAT_BANS_FILE = path.join(DATA_DIR, 'chat_bans.json');
@@ -123,6 +128,57 @@ export function loadHidden(): string[] {
 export function saveHidden(hidden: string[]): void {
   invalidateCache('hidden');
   atomicWrite(resolveFile(HIDDEN_FILE, 'hidden.json'), JSON.stringify(hidden));
+}
+
+// ── Admin-destroyed track IDs (persist ingest block after «Видалити») ───
+
+export function loadDestroyedTracks(): string[] {
+  const file = destroyedTracksFile();
+  return readJson<string[]>(file, 'destroyed_tracks.json', [], 'destroyed_tracks');
+}
+
+export function saveDestroyedTracks(ids: string[]): void {
+  invalidateCache('destroyed_tracks');
+  const file = destroyedTracksFile();
+  atomicWrite(resolveFile(file, 'destroyed_tracks.json'), JSON.stringify(ids));
+}
+
+function trackIdVariants(raw: string): string[] {
+  const id = String(raw || '').trim();
+  if (!id) return [];
+  const clean = id.replace(/_\d+$/, '');
+  return clean === id ? [id] : [id, clean];
+}
+
+/** After admin delete: block worker re-ingest with the same track_id. */
+export function rememberDestroyedTracks(...rawIds: string[]): boolean {
+  const destroyed = loadDestroyedTracks();
+  const set = new Set(destroyed);
+  let changed = false;
+  for (const raw of rawIds) {
+    for (const id of trackIdVariants(raw)) {
+      if (!set.has(id)) {
+        set.add(id);
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return false;
+  const next = [...set];
+  if (next.length > DESTROYED_TRACKS_MAX) {
+    next.splice(0, next.length - DESTROYED_TRACKS_MAX);
+  }
+  saveDestroyedTracks(next);
+  return true;
+}
+
+export function isTrackAdminDestroyed(trackId: unknown): boolean {
+  const id = String(trackId ?? '').trim();
+  if (!id) return false;
+  const set = new Set(loadDestroyedTracks());
+  if (set.has(id)) return true;
+  const clean = id.replace(/_\d+$/, '');
+  return clean !== id && set.has(clean);
 }
 
 // ── Blocked users (cached 30s) ───────────────────────────────────────────

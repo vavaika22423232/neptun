@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
+import { rememberDestroyedTracks } from '../admin/data';
 import { computeMarkerDisplayPolicy, DEFAULT_MARKER_DISPLAY_POLICY } from '../marker-display-policy';
 import {
   decidePositionUpdate,
@@ -10,22 +14,9 @@ import {
 import { computeMapModeState } from '../map-mode-state';
 import { resolveMapRenderProfile } from '../map/map-render-profile';
 import { coalesceMarkerNewEvents } from '../marker-sse-coalesce';
-import type { AdminSettings } from '../admin/data';
-import {
-  explainPublicMapRawFilter,
-  markerPassesPublicMapRawFilter,
-  parseRawMarkerMessageTimeMs,
-} from '../marker-publication';
+import { markerPassesPublicMapRawFilter, parseRawMarkerMessageTimeMs } from '../marker-publication';
 import { mapStoreRecordToMarker } from '../map-store-record-to-marker';
-import { normalizeIngestMotionFields, normalizeIngestMotionPatch } from '../ingest-motion-normalize';
 import { normalizeAirBalloonThreatType } from '../threat-type-air-balloon';
-import type { Alarm } from '@/types';
-import {
-  ingestThreatTypeRequiresAirAlarmGate,
-} from '../ingest-air-alarm-gate';
-import { districtRegionNamesForAlarms, hascListForStateAlarms } from '../map/alarm-hasc-filter';
-import { expandMarkersForSwarmDisplay } from '../map/marker-swarm-expand';
-import { markersToGeoJSON } from '../map/markers-to-geojson';
 import { THREAT_ICONS, THREAT_NAMES } from '@/types';
 import type { Marker } from '@/types';
 
@@ -41,157 +32,6 @@ function test(name: string, fn: () => void): void {
 
 const now = Date.now();
 
-function mkAdminSettings(overrides: Partial<AdminSettings> = {}): AdminSettings {
-  return {
-    monitorPeriod: 30,
-    ttlEnabled: true,
-    minConfidence: 0.65,
-    spatialCorrelatorEnabled: true,
-    corroborationMinObservations: 2,
-    corroborationWindowMinutes: 30,
-    corroborationMaxRadiusKm: 45,
-    corroborationMinDistinctSources: 2,
-    dualSourceMapGate: false,
-    regionUncertaintyKm: 38,
-    corroboratedUncertaintyKm: 9,
-    ...overrides,
-  };
-}
-
-function rawMapCtx(marker: Record<string, unknown>, settings: AdminSettings, cutoffMs: number) {
-  return {
-    settings,
-    ttlEnabled: true,
-    cutoffMs,
-    hiddenSet: new Set<string>(),
-    messageTimeMs: parseRawMarkerMessageTimeMs(marker),
-  };
-}
-
-test('air-alarm ingest gate covers UAV, missiles, ballistic, KAB, strikes (not balloon)', () => {
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('shahed'), true);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('air_balloon'), false);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('ballistic'), true);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('raketa'), true);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('missile'), true);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('kab'), true);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('vibuh'), true);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('alarm'), false);
-  assert.equal(ingestThreatTypeRequiresAirAlarmGate('default'), false);
-});
-
-test('multi-count UAV group stays a single map marker without count badge text', () => {
-  const marker = {
-    id: 'group-1',
-    type: 'shahed',
-    threat_type: 'shahed',
-    location: 'Залісся',
-    region: 'Київська область',
-    lat: 50.632,
-    lng: 30.874,
-    count: 4,
-    confidence: 0.95,
-    resolve_status: 'ok',
-    placement_mode: 'point',
-    timestamp: new Date(now).toISOString(),
-  } as Marker;
-
-  const expanded = expandMarkersForSwarmDisplay([marker]);
-  assert.equal(expanded.length, 1);
-  assert.equal(expanded[0]?.count, 4);
-
-  const geojson = markersToGeoJSON([marker]);
-  assert.equal(geojson.features.length, 1);
-  assert.equal(geojson.features[0]?.properties.count, 4);
-  assert.equal(geojson.features[0]?.properties.count_label, '');
-});
-
-test('state alarm regionId UA-18 maps to Zhytomyr HASC like map oblast fill', () => {
-  const fc = {
-    type: 'FeatureCollection' as const,
-    features: [
-      {
-        type: 'Feature' as const,
-        properties: { HASC_1: 'UA.ZT', NL_NAME_1: 'Житомирська', NAME_1: 'Zhytomyr' },
-        geometry: { type: 'Polygon' as const, coordinates: [] as number[][][] },
-      },
-    ],
-  };
-  const alarms: Alarm[] = [
-    {
-      regionId: 'UA-18',
-      regionType: 'State',
-      regionName: '',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-  ];
-  assert.ok(hascListForStateAlarms(alarms, fc).includes('UA.ZT'));
-});
-
-test('renamed Samarskyi district alarm also covers legacy Novomoskovskyi raion polygons', () => {
-  const alarms: Alarm[] = [
-    {
-      regionId: '43',
-      regionType: 'District',
-      regionName: 'Самарівський район',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-  ];
-
-  const districts = districtRegionNamesForAlarms(alarms);
-  assert.ok(districts.includes('самарівськии раион'));
-  assert.ok(districts.includes('новомосковськии раион'));
-});
-
-test('district alarm names normalize apostrophe variants used by API and GeoJSON', () => {
-  const alarms: Alarm[] = [
-    {
-      regionId: '42',
-      regionType: 'District',
-      regionName: 'Кам’янський район',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-    {
-      regionId: '123',
-      regionType: 'District',
-      regionName: 'Куп’янський район',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-  ];
-
-  const districts = districtRegionNamesForAlarms(alarms);
-  assert.ok(districts.includes('камянськии раион'));
-  assert.ok(districts.includes('купянськии раион'));
-});
-
-test('renamed district alarms cover legacy 2020 raion GeoJSON names', () => {
-  const alarms: Alarm[] = [
-    {
-      regionId: '60',
-      regionType: 'District',
-      regionName: 'Звягельський район',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-    {
-      regionId: 'UA-07-02',
-      regionType: 'District',
-      regionName: 'Володимирський район',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-    {
-      regionId: 'UA-46-05',
-      regionType: 'District',
-      regionName: 'Шептицький район',
-      activeAlerts: [{ type: 'AIR' }],
-    },
-  ];
-
-  const districts = districtRegionNamesForAlarms(alarms);
-  assert.ok(districts.includes('новоград-волинськии раион'));
-  assert.ok(districts.includes('володимир-волинськии раион'));
-  assert.ok(districts.includes('червоноградськии раион'));
-});
-
 test('air balloon wording is not left as shahed/uav', () => {
   const marker: Record<string, unknown> = {
     threat_type: 'shahed',
@@ -199,6 +39,37 @@ test('air balloon wording is not left as shahed/uav', () => {
   };
   normalizeAirBalloonThreatType(marker);
   assert.equal(marker.threat_type, 'air_balloon');
+});
+
+test('admin-destroyed track_id is excluded from public map after delete', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'neptun-destroyed-'));
+  const prevDataDir = process.env.DATA_DIR;
+  process.env.DATA_DIR = tmp;
+  try {
+    rememberDestroyedTracks('track-admin-del-1');
+    const marker = {
+      lat: 49.0,
+      lng: 32.0,
+      track_id: 'track-admin-del-1',
+      confidence: 0.9,
+      ts: new Date(now).toISOString(),
+    };
+    assert.equal(
+      markerPassesPublicMapRawFilter(marker, {
+        minConf: 0.65,
+        dualSourceMapGate: false,
+        ttlEnabled: false,
+        cutoffMs: 0,
+        hiddenSet: new Set(),
+        messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+      }),
+      false,
+    );
+  } finally {
+    if (prevDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = prevDataDir;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('low confidence marker is excluded from public raw map filter', () => {
@@ -209,339 +80,16 @@ test('low confidence marker is excluded from public raw map filter', () => {
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: false,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     false,
   );
-});
-
-test('public raw map filter explains low-confidence exclusion', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    confidence: 0.31,
-    ts: new Date(now).toISOString(),
-  };
-  const decision = explainPublicMapRawFilter(
-    marker,
-    rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-  );
-  assert.equal(decision.passes, false);
-  assert.equal(decision.reason, 'publication_not_public');
-});
-
-test('fresh high-confidence V3 UAV tracking target passes public raw filter as radar provisional', () => {
-  const marker = {
-    id: 'target-provisional',
-    track_id: 'target-provisional',
-    lat: 49.0,
-    lng: 32.0,
-    threat_type: 'shahed',
-    place: 'Черкаси',
-    region: 'Черкаська область',
-    confidence: 0.7,
-    target_confidence: 0.92,
-    target_lifecycle_state: 'TRACKING',
-    track_state: 'observed',
-    track_confidence: 0.7,
-    source_count: 1,
-    observations: [{ lat: 49.0, lng: 32.0, ts: now - 90_000, source: 'trusted-a' }],
-    channel_priority: 3,
-    resolve_status: 'ok',
-    placement_mode: 'point',
-    created_at_epoch: now - 90_000,
-    last_update_epoch: now - 90_000,
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true, minConfidenceUav: 0.45 }), now - 30 * 60_000),
-    ),
-    true,
-  );
-  const decision = explainPublicMapRawFilter(
-    marker,
-    rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true, minConfidenceUav: 0.45 }), now - 30 * 60_000),
-  );
-  assert.equal(decision.passes, true);
-  assert.equal(decision.reason, 'public');
-});
-
-test('fresh high-confidence extrapolated V3 UAV stays visible despite decayed visual confidence', () => {
-  const marker = {
-    id: 'target-provisional-extrapolated',
-    track_id: 'target-provisional-extrapolated',
-    lat: 49.03,
-    lng: 32.06,
-    threat_type: 'shahed',
-    place: 'Черкаси',
-    region: 'Черкаська область',
-    confidence: 0.36,
-    target_confidence: 0.93,
-    target_lifecycle_state: 'TRACKING',
-    track_state: 'extrapolated',
-    track_confidence: 0.31,
-    source_count: 1,
-    observations: [{ lat: 49.0, lng: 32.0, ts: now - 15 * 60_000, source: 'trusted-a' }],
-    channel_priority: 3,
-    resolve_status: 'ok',
-    placement_mode: 'point',
-    created_at_epoch: now - 16 * 60_000,
-    last_update_epoch: now - 15 * 60_000,
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true, minConfidenceUav: 0.45 }), now - 30 * 60_000),
-    ),
-    true,
-  );
-});
-
-test('fresh confirmed observed UAV track with moderate confidence passes public raw filter', () => {
-  const marker = {
-    id: 'target-confirmed-observed',
-    track_id: 'target-confirmed-observed',
-    lat: 49.0,
-    lng: 32.0,
-    threat_type: 'shahed',
-    place: 'Черкаси',
-    region: 'Черкаська область',
-    confidence: 0.75,
-    target_confidence: 0.75,
-    target_lifecycle_state: 'CONFIRMED',
-    track_state: 'observed',
-    track_confidence: 0.72,
-    source_count: 1,
-    observations: [{ lat: 49.0, lng: 32.0, ts: now - 60_000, source: 'trusted-a' }],
-    channel_priority: 3,
-    resolve_status: 'ok',
-    placement_mode: 'point',
-    created_at_epoch: now - 60_000,
-    last_update_epoch: now - 60_000,
-  };
-  const decision = explainPublicMapRawFilter(
-    marker,
-    rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false, minConfidenceUav: 0.45 }), now - 30 * 60_000),
-  );
-  assert.equal(decision.passes, true);
-  assert.equal(decision.reason, 'public');
-});
-
-test('admin hidden marker suppresses nearby ticker-shifted same-text marker', () => {
-  const marker = {
-    lat: 49.012,
-    lng: 32.018,
-    confidence: 0.92,
-    threat_type: 'shahed',
-    text: 'Шахед курсом на Черкаси',
-    ts: new Date(now).toISOString(),
-  };
-  const ctx = rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000);
-  ctx.hiddenSet = new Set(['49,32|Шахед курсом на Черкаси|auto']);
-  assert.equal(markerPassesPublicMapRawFilter(marker, ctx), false);
-});
-
-test('ambiguous automatic geocode is kept off the public map', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    confidence: 0.92,
-    threat_type: 'shahed',
-    place: 'Черкаси',
-    geocode_tier: 'multi',
-    candidates_count: 3,
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('non-place labels from parser are kept off the public map', () => {
-  const marker = {
-    lat: 46.45,
-    lng: 31.7,
-    confidence: 0.92,
-    threat_type: 'shahed',
-    place: 'воду',
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('coarse automatic placements are kept off the public map', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    confidence: 0.92,
-    threat_type: 'shahed',
-    place: 'Черкаська область',
-    placement_mode: 'approximate',
-    resolve_status: 'oblast_fallback',
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('Chișinău-area coords excluded from public map (loose ingest bbox overlaps Moldova)', () => {
-  const marker = {
-    lat: 47.0105,
-    lng: 28.8578,
-    confidence: 0.92,
-    threat_type: 'shahed',
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('western Black Sea point without evidence stays off the public marker feed', () => {
-  const marker = {
-    lat: 46.2,
-    lng: 31.4,
-    confidence: 0.92,
-    threat_type: 'shahed',
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('Odesa city alarm passes public filter even though coords fall inside maritime bbox', () => {
-  // Odesa: lat=46.483 < 46.7 guard, inside maritime bbox — but place='Одеса' is land evidence
-  const marker = {
-    lat: 46.483,
-    lng: 30.723,
-    place: 'Одеса',
-    region: 'Одеська область',
-    confidence: 0.95,
-    threat_type: 'shahed',
-    source_count: 2,
-    observations: [{ source: 'ch1' }, { source: 'ch2' }],
-    ts: new Date(now).toISOString(),
-    resolve_status: 'ok',
-    placement_mode: 'point',
-    geocode_tier: 'point',
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    true,
-    'Odesa city should pass — land place evidence exempts it from maritime block',
-  );
-});
-
-test('Kherson city alarm passes public filter despite being below lat=46.7 maritime guard', () => {
-  const marker = {
-    lat: 46.64,
-    lng: 32.6,
-    place: 'Херсон',
-    region: 'Херсонська область',
-    confidence: 0.95,
-    threat_type: 'shahed',
-    source_count: 2,
-    observations: [{ source: 'ch1' }, { source: 'ch2' }],
-    ts: new Date(now).toISOString(),
-    resolve_status: 'ok',
-    placement_mode: 'point',
-    geocode_tier: 'point',
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    true,
-    'Kherson city should pass — land place evidence exempts it from maritime block',
-  );
-});
-
-test('Black Sea maritime approach with place="Чорне море" passes public filter', () => {
-  const marker = {
-    lat: 45.84,
-    lng: 30.8,
-    place: 'Чорне море',
-    region: '',
-    confidence: 0.82,
-    threat_type: 'shahed',
-    source_count: 2,
-    observations: [{ source: 'ch1' }, { source: 'ch2' }],
-    ts: new Date(now).toISOString(),
-    resolve_status: 'maritime_approach',
-    placement_mode: 'point',
-    geocode_tier: 'point',
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    true,
-    'Maritime approach with "Чорне море" has maritime evidence and should pass',
-  );
-});
-
-test('UAV below verified-public confidence stays off public even when admin floor is relaxed', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    threat_type: 'shahed',
-    confidence: 0.62,
-    ts: new Date(now).toISOString(),
-  };
-  const relaxed = mkAdminSettings({ dualSourceMapGate: false, minConfidence: 0.65, minConfidenceUav: 0.6 });
-  assert.equal(
-    markerPassesPublicMapRawFilter(marker, rawMapCtx(marker, relaxed, now - 30 * 60_000)),
-    false,
-  );
-  const strict = mkAdminSettings({ dualSourceMapGate: false, minConfidence: 0.65 });
-  assert.equal(
-    markerPassesPublicMapRawFilter(marker, rawMapCtx(marker, strict, now - 30 * 60_000)),
-    false,
-  );
-});
-
-test('ingest clamps absurd UAV speed to motion profile max', () => {
-  const marker: Record<string, unknown> = { threat_type: 'shahed', speed_kmh: 900 };
-  normalizeIngestMotionFields(marker);
-  assert.equal(marker.speed_kmh, 350);
-});
-
-test('ingest motion patch clamps speed_kmh on partial update', () => {
-  const updates: Record<string, unknown> = { speed_kmh: 500 };
-  normalizeIngestMotionPatch(updates, 'shahed');
-  assert.equal(updates.speed_kmh, 350);
 });
 
 test('blocked placement mode is excluded from public raw map filter', () => {
@@ -553,10 +101,14 @@ test('blocked placement mode is excluded from public raw map filter', () => {
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: false,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     false,
   );
 });
@@ -570,50 +122,42 @@ test('lost automatic track is excluded from public raw map filter', () => {
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: false,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     false,
   );
 });
 
-test('split-candidate automatic track is excluded from public raw map filter', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    confidence: 0.9,
-    track_state: 'split_candidate',
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
+test('stale and split-candidate automatic tracks are excluded from public raw map filter', () => {
+  for (const trackState of ['stale', 'split_candidate']) {
+    const marker = {
+      lat: 49.0,
+      lng: 32.0,
+      confidence: 0.9,
+      track_state: trackState,
+      ts: new Date(now).toISOString(),
+    };
+    assert.equal(
+      markerPassesPublicMapRawFilter(marker, {
+        minConf: 0.65,
+        dualSourceMapGate: false,
+        ttlEnabled: true,
+        cutoffMs: now - 30 * 60_000,
+        hiddenSet: new Set(),
+        messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+      }),
+      false,
+    );
+  }
 });
 
-test('stale automatic track is not public under verified-marker policy', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    confidence: 0.9,
-    track_state: 'stale',
-    track_confidence: 0.25,
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('unconfirmed extrapolated track is not public under verified-marker policy', () => {
+test('low track-confidence automatic marker is excluded instead of dimmed', () => {
   const marker = {
     lat: 49.0,
     lng: 32.0,
@@ -623,28 +167,14 @@ test('unconfirmed extrapolated track is not public under verified-marker policy'
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
-    false,
-  );
-});
-
-test('observed track with very low motion confidence is still excluded', () => {
-  const marker = {
-    lat: 49.0,
-    lng: 32.0,
-    confidence: 0.9,
-    track_confidence: 0.49,
-    track_state: 'observed',
-    ts: new Date(now).toISOString(),
-  };
-  assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: false,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     false,
   );
 });
@@ -659,15 +189,19 @@ test('manual lost marker is still allowed through public raw map filter', () => 
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: false }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: false,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     true,
   );
 });
 
-test('direct single-source automatic marker is not public without verified evidence', () => {
+test('dual-source gate hides pending single-source automatic marker', () => {
   const marker = {
     lat: 49.0,
     lng: 32.0,
@@ -676,15 +210,19 @@ test('direct single-source automatic marker is not public without verified evide
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: true,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     false,
   );
 });
 
-test('same-source observations are not enough for verified public marker', () => {
+test('dual-source gate recomputes single-source observations even without pending flag', () => {
   const marker = {
     lat: 48.9,
     lng: 36.7,
@@ -696,10 +234,14 @@ test('same-source observations are not enough for verified public marker', () =>
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: true,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     false,
   );
 });
@@ -709,20 +251,20 @@ test('dual-source gate allows priority-1 official single-source marker', () => {
     lat: 47.47,
     lng: 36.25,
     confidence: 0.95,
-    threat_type: 'shahed',
-    place: 'Запоріжжя',
-    placement_mode: 'point',
-    resolve_status: 'ok',
     observations: [
       { lat: 47.47, lng: 36.25, ts: now - 30_000, source: 'UkraineAlarmSignal', channel_priority: 1 },
     ],
     ts: new Date(now).toISOString(),
   };
   assert.equal(
-    markerPassesPublicMapRawFilter(
-      marker,
-      rawMapCtx(marker, mkAdminSettings({ dualSourceMapGate: true }), now - 30 * 60_000),
-    ),
+    markerPassesPublicMapRawFilter(marker, {
+      minConf: 0.65,
+      dualSourceMapGate: true,
+      ttlEnabled: true,
+      cutoffMs: now - 30 * 60_000,
+      hiddenSet: new Set(),
+      messageTimeMs: parseRawMarkerMessageTimeMs(marker),
+    }),
     true,
   );
 });
@@ -969,42 +511,25 @@ test('map mode fades desktop SVG to tiles across zoom band', () => {
   assert.equal(high.svgOpacity, 0);
 });
 
-test('map render profile uses same vector basemap on mobile browser as on desktop', () => {
+test('map render profile keeps exact district SVG for mobile and WebView', () => {
   const mobile = resolveMapRenderProfile({
     isEmbed: false,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile',
     maxTouchPoints: 5,
   });
-
-  assert.equal(mobile.kind, 'mobile');
-  assert.equal(mobile.basemap, 'rasterVectorDark');
-  assert.equal(mobile.lowTileMode, false);
-  assert.equal(mobile.maxZoom, 19);
-  assert.equal(mobile.tile.detectRetina, true);
-  assert.equal(mobile.lowInteraction, true);
-  assert.equal(mobile.svg.loadDetailedDistricts, true);
-  assert.equal(mobile.svg.loadOblastNames, true);
-  assert.equal(mobile.svg.allowDistrictGeoJson, false);
-  assert.equal(mobile.svg.hideDuringInteraction, true);
-});
-
-test('in-app WebView (?embed=1) uses same vector basemap as desktop site', () => {
   const webview = resolveMapRenderProfile({
     isEmbed: true,
     userAgent: 'Mozilla/5.0 (Linux; Android 14) Mobile',
     maxTouchPoints: 5,
   });
 
-  assert.equal(webview.kind, 'webview');
-  assert.equal(webview.basemap, 'rasterVectorDark');
-  assert.equal(webview.lowTileMode, false);
-  assert.equal(webview.maxZoom, 19);
-  assert.equal(webview.lowInteraction, true);
-  assert.equal(webview.tile.detectRetina, true);
-  assert.equal(webview.svg.loadDetailedDistricts, true);
-  assert.equal(webview.svg.loadOblastNames, true);
-  assert.equal(webview.svg.allowDistrictGeoJson, false);
-  assert.equal(webview.svg.hideDuringInteraction, true);
+  for (const profile of [mobile, webview]) {
+    assert.equal(profile.lowInteraction, true);
+    assert.equal(profile.svg.loadDetailedDistricts, true);
+    assert.equal(profile.svg.loadOblastNames, true);
+    assert.equal(profile.svg.allowDistrictGeoJson, false);
+    assert.equal(profile.svg.hideDuringInteraction, true);
+  }
 });
 
 test('map render profile keeps desktop on full alarm SVG contract too', () => {
@@ -1015,8 +540,6 @@ test('map render profile keeps desktop on full alarm SVG contract too', () => {
   });
 
   assert.equal(desktop.kind, 'desktop');
-  assert.equal(desktop.basemap, 'rasterVectorDark');
-  assert.equal(desktop.lowTileMode, false);
   assert.equal(desktop.lowInteraction, false);
   assert.equal(desktop.svg.loadDetailedDistricts, true);
   assert.equal(desktop.svg.loadOblastNames, true);

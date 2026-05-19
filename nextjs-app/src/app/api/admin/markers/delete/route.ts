@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
-import { loadHidden, saveHidden } from '@/lib/admin/data';
+import { loadHidden, rememberDestroyedTracks, saveHidden } from '@/lib/admin/data';
 import { invalidateMarkerDerivedCaches } from '@/lib/cache';
 import { broadcastSSE } from '@/lib/chat-sse-stream';
+import { deleteMarker, getRawMessages, initStore } from '@/lib/markers-store';
 import { initTargetStore, markTrackedTargetLifecycle, syncTargetStoreFromRedis, getTrackedTargetRecords } from '@/lib/tracked-target-store';
 
 function rememberHiddenMarker(marker: { lat?: unknown; lng?: unknown; text?: unknown; manual?: unknown }): string | null {
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
   if (denied) return denied;
 
   try {
+    await initStore();
     await initTargetStore();
     await syncTargetStoreFromRedis();
     const body = await request.json();
@@ -35,7 +37,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing id or coordinates' }, { status: 400 });
     }
 
-    const messages = getTrackedTargetRecords();
+    const rawMessages = getRawMessages();
+    const trackedMessages = getTrackedTargetRecords();
+    const messages = [...rawMessages, ...trackedMessages];
     const requestedId = id ? String(id) : '';
     const cleanRequestedId = requestedId.replace(/_\d+$/, '');
     const idMatch = requestedId
@@ -53,17 +57,40 @@ export async function POST(request: Request) {
       manual: idMatch?.manual,
     });
 
+    const destroyedIds = [
+      requestedId,
+      cleanRequestedId,
+      idMatch?.id,
+      idMatch?.track_id,
+    ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+    const destroyedRemembered = rememberDestroyedTracks(...destroyedIds);
+    if (destroyedRemembered || hiddenKey) {
+      invalidateMarkerDerivedCaches();
+    }
+
     if (id) {
-      const ok = await markTrackedTargetLifecycle(requestedId, 'DESTROYED') ||
-                 (cleanRequestedId !== requestedId ? await markTrackedTargetLifecycle(cleanRequestedId, 'DESTROYED') : false);
+      const removedRaw = await deleteMarker(requestedId) ||
+        (cleanRequestedId !== requestedId ? await deleteMarker(cleanRequestedId) : false);
+      const removedTrack = await markTrackedTargetLifecycle(requestedId, 'DESTROYED') ||
+        (cleanRequestedId !== requestedId ? await markTrackedTargetLifecycle(cleanRequestedId, 'DESTROYED') : false);
       
-      if (ok) {
+      if (removedRaw || removedTrack || destroyedRemembered) {
+        if (removedTrack && !removedRaw) {
+          broadcastSSE({ type: 'marker_delete', data: { id: requestedId } });
+        } else if (removedRaw) {
+          broadcastSSE({ type: 'marker_delete', data: { id: requestedId } });
+        }
         broadcastSSE({ type: 'markers_refresh', data: { reason: 'admin_delete', hidden: Boolean(hiddenKey) } });
-        return NextResponse.json({ status: 'ok', removed: 1, hidden: Boolean(hiddenKey) });
+        return NextResponse.json({
+          status: 'ok',
+          removed: removedRaw || removedTrack ? 1 : 0,
+          hidden: Boolean(hiddenKey),
+          destroyed: destroyedRemembered,
+        });
       }
     }
 
-    if (lat !== undefined && lng !== undefined) {
+    if (!id && lat !== undefined && lng !== undefined) {
       const coordTolerance = 0.05;
       const match = messages.find(m => {
         const latMatch = Math.abs(Number(m.lat) - Number(lat)) < coordTolerance;
@@ -72,11 +99,15 @@ export async function POST(request: Request) {
       });
 
       if (match) {
-        const targetId = String(match.track_id || match.id);
-        const ok = await markTrackedTargetLifecycle(targetId, 'DESTROYED');
-        if (ok) {
+        const markerId = String(match.id || '');
+        const targetId = String(match.track_id || markerId);
+        rememberDestroyedTracks(markerId, targetId);
+        const removedRaw = markerId ? await deleteMarker(markerId) : false;
+        const removedTrack = targetId ? await markTrackedTargetLifecycle(targetId, 'DESTROYED') : false;
+        if (removedRaw || removedTrack) {
+          broadcastSSE({ type: 'marker_delete', data: { id: targetId || markerId } });
           broadcastSSE({ type: 'markers_refresh', data: { reason: 'admin_delete', hidden: Boolean(hiddenKey) } });
-          return NextResponse.json({ status: 'ok', removed: 1, hidden: Boolean(hiddenKey) });
+          return NextResponse.json({ status: 'ok', removed: 1, hidden: Boolean(hiddenKey), destroyed: true });
         }
       }
     }

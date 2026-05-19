@@ -6,31 +6,10 @@ import { loadSettings } from '@/lib/admin/data';
 import { ingestBodyTooLargeResponse } from '@/lib/ingest-body-limit';
 import { validateIngestMarker, validateIngestPatchUpdates } from '@/lib/ingest-validate';
 import { verifyIngestOrRespond } from '@/lib/ingest-auth-guard';
-import { IngestMarkerSchema, IngestCandidateEventSchema, IngestPatchSchema } from '@/lib/api-schemas';
+import { IngestMarkerSchema, IngestPatchSchema } from '@/lib/api-schemas';
+import { isTrackAdminDestroyed } from '@/lib/admin/data';
 import { ingestShouldBroadcastMarker } from '@/lib/marker-publication';
 import { normalizeAirBalloonThreatType } from '@/lib/threat-type-air-balloon';
-import { ingestMarkerEvidence, initTargetStore, syncTargetStoreFromRedis, trackerDecisionToPublicRecord } from '@/lib/tracked-target-store';
-
-/** Convert candidate_event payload (worker V2 format) to flat marker record */
-function candidateEventToMarker(ce: Record<string, unknown>): Record<string, unknown> {
-  const loc = (ce.locality ?? {}) as Record<string, unknown>;
-  return {
-    ...ce,
-    id: ce.event_id ?? ce.fingerprint,
-    track_id: ce.target_id ?? ce.event_id,
-    lat: loc.lat ?? ce.lat,
-    lng: loc.lng ?? ce.lng,
-    place: loc.place ?? ce.place,
-    region: loc.region ?? ce.region,
-    confidence: loc.confidence ?? ce.confidence,
-    geocode_tier: loc.geocode_tier ?? ce.geocode_tier,
-    resolve_status: loc.resolve_status ?? ce.resolve_status,
-    threat_type: ce.threat_type,
-    text: ce.raw_text,
-    channel: ce.channel_name ?? ce.source,
-    date: typeof ce.ts === 'number' ? new Date(ce.ts * 1000).toISOString() : ce.ts,
-  };
-}
 
 // ── POST handler ─────────────────────────────────────────────────────────────
 
@@ -42,8 +21,6 @@ export async function POST(request: Request) {
   if (tooLarge) return tooLarge;
 
   await initStore();
-  await initTargetStore();
-  await syncTargetStoreFromRedis();
 
   let rawBody: unknown;
   try {
@@ -52,21 +29,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Support both {marker:{...}} and {candidate_event:{...}} (worker V2 format)
-  let marker: Record<string, unknown>;
-  const candidateParsed = IngestCandidateEventSchema.safeParse(rawBody);
-  if (candidateParsed.success) {
-    marker = candidateEventToMarker(candidateParsed.data.candidate_event as Record<string, unknown>);
-  } else {
-    const parsed = IngestMarkerSchema.safeParse(rawBody);
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid payload' }, { status: 400 });
-    }
-    marker = parsed.data.marker as Record<string, unknown>;
+  const parsed = IngestMarkerSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid payload' }, { status: 400 });
   }
 
+  const marker = parsed.data.marker as Record<string, unknown>;
   normalizeAirBalloonThreatType(marker);
-
 
   const coordCheck = validateIngestMarker(marker);
   if (!coordCheck.ok) {
@@ -74,75 +43,109 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: coordCheck.error }, { status: 400 });
   }
 
-  // --- V3 Tracking Engine Ingest ---
-  const trackerDecision = await ingestMarkerEvidence(marker);
-  const publicV3Marker = trackerDecisionToPublicRecord(trackerDecision);
-
-  // --- Legacy Store Ingest ---
-  let finalResult: { id?: string; total: number; removed?: number; mode?: 'created' | 'updated' };
-  let shouldBroadcast = false;
-
+  // Track-aware upsert: if marker has track_id, use upsert logic
   if (marker.track_id && typeof marker.track_id === 'string') {
-    const upsertRes = await upsertByTrackId(marker.track_id, marker);
-    finalResult = upsertRes;
+    if (isTrackAdminDestroyed(marker.track_id)) {
+      return NextResponse.json({
+        ok: true,
+        suppressed: true,
+        reason: 'admin_destroyed_track',
+        track_id: marker.track_id,
+      });
+    }
+    const result = await upsertByTrackId(marker.track_id, marker);
+    if (result.mode === 'suppressed') {
+      return NextResponse.json({
+        ok: true,
+        suppressed: true,
+        reason: 'admin_destroyed_track',
+        track_id: marker.track_id,
+      });
+    }
+
+    const minConf = loadSettings().minConfidence ?? 0.65;
     const rowsAfter = getRawMessages();
     const fullRowForBroadcast =
       rowsAfter.find(
-        (r) => String(r.track_id) === String(marker.track_id) && String(r.id) === String(upsertRes.id),
+        (r) => String(r.track_id) === String(marker.track_id) && String(r.id) === String(result.id),
       ) ??
       rowsAfter.find((r) => String(r.track_id) === String(marker.track_id));
-    
-    shouldBroadcast = ingestShouldBroadcastMarker(
+    const shouldBroadcast = ingestShouldBroadcastMarker(
       (fullRowForBroadcast ?? marker) as Record<string, unknown>,
+      minConf,
     );
 
+    // Broadcast track update — strip positions[] to save bandwidth (skip if below confidence threshold)
+    // For 'updated' mode, client appends lat/lng locally; for 'created', client uses initial position
+    // Full positions[] is fetched via /api/data polling
     if (shouldBroadcast) {
-      const broadcastMarker: Record<string, unknown> = { ...marker, id: upsertRes.id };
-      if (upsertRes.mode === 'updated') {
-        delete broadcastMarker.positions;
+      const broadcastMarker: Record<string, unknown> = { ...marker, id: result.id };
+      if (result.mode === 'updated') {
+        delete broadcastMarker.positions; // client builds locally from lat/lng
+      } else if (Array.isArray(broadcastMarker.positions) && (broadcastMarker.positions as unknown[]).length > 3) {
+        broadcastMarker.positions = (broadcastMarker.positions as unknown[]).slice(-3);
+      }
+      const tid = String(marker.track_id);
+      const fullRow =
+        rowsAfter.find((r) => String(r.track_id) === tid && String(r.id) === String(result.id)) ??
+        rowsAfter.find((r) => String(r.track_id) === tid);
+      if (fullRow && typeof fullRow === 'object') {
+        attachDisplayPolicyToPayload(fullRow as Record<string, unknown>, broadcastMarker);
       }
       broadcastSSE({
         type: 'track_update',
-        data: { track_id: String(marker.track_id), mode: upsertRes.mode, marker: broadcastMarker },
+        data: {
+          track_id: marker.track_id,
+          mode: result.mode,
+          marker: broadcastMarker,
+        },
       });
     }
-  } else {
-    const addRes = await addMarker(marker);
-    finalResult = addRes;
-    const resolvedId = addRes.id || (marker.id as string);
-    const fullRowLegacy = getRawMessages().find((r) => String(r.id) === String(resolvedId));
-    shouldBroadcast = ingestShouldBroadcastMarker(
-      (fullRowLegacy ?? marker) as Record<string, unknown>,
+
+    console.log(
+      `[INGEST] Track ${result.mode}: ${marker.track_id} (id=${result.id}) — ${result.total} total`
     );
 
-    if (shouldBroadcast) {
-      broadcastSSE({ type: 'marker_created', data: { ...marker, id: resolvedId } });
-    }
+    return NextResponse.json({
+      ok: true,
+      total: result.total,
+      mode: result.mode,
+      id: result.id,
+      public_broadcast: shouldBroadcast,
+    });
   }
 
-  // --- Admin Feed Broadcast ---
-  broadcastSSE({
-    type: 'admin_feed',
-    data: {
-      ...marker,
-      status: 'processed',
-      track_id: marker.track_id || (trackerDecision as any)?.target?.id,
-      v3_action: (trackerDecision as any)?.action,
-      v3_lifecycle: (trackerDecision as any)?.target?.lifecycle_state
-    }
-  });
+  // Legacy: no track_id — add as standalone marker
+  const result = await addMarker(marker);
 
-  // --- V3 Broadcast (if V3 thinks it's public but legacy logic didn't already send it) ---
-  if (publicV3Marker && !shouldBroadcast) {
-     broadcastSSE({ type: 'marker_created', data: publicV3Marker });
+  const minConf = loadSettings().minConfidence ?? 0.65;
+  const resolvedId = result.id ?? marker.id;
+  const fullRowLegacy = getRawMessages().find((r) => String(r.id) === String(resolvedId));
+  const shouldBroadcast = ingestShouldBroadcastMarker(
+    (fullRowLegacy ?? marker) as Record<string, unknown>,
+    minConf,
+  );
+
+  // Broadcast new marker to all SSE clients (real-time push) — skip if below confidence threshold
+  if (shouldBroadcast) {
+    const payload: Record<string, unknown> = { ...marker };
+    const fullRow = fullRowLegacy;
+    if (fullRow && typeof fullRow === 'object') {
+      attachDisplayPolicyToPayload(fullRow as Record<string, unknown>, payload);
+    }
+    broadcastSSE({ type: 'marker_new', data: payload });
   }
+
+  console.log(
+    `[INGEST] Saved marker ${marker.id} — ${result.total} total` +
+    (result.removed > 0 ? `, pruned ${result.removed} old` : '')
+  );
 
   return NextResponse.json({
     ok: true,
-    total: finalResult.total,
-    id: finalResult.id ?? marker.id,
-    public_broadcast: shouldBroadcast || !!publicV3Marker,
-    v3_status: trackerDecision?.action
+    total: result.total,
+    id: result.id ?? marker.id,
+    public_broadcast: shouldBroadcast,
   });
 }
 
@@ -189,7 +192,7 @@ export async function PATCH(request: Request) {
   const minConfPatch = loadSettings().minConfidence ?? 0.65;
   const shouldPatchBroadcast =
     fullRowAfterPatch &&
-    ingestShouldBroadcastMarker(fullRowAfterPatch as Record<string, unknown>);
+    ingestShouldBroadcastMarker(fullRowAfterPatch as Record<string, unknown>, minConfPatch);
 
   if (shouldPatchBroadcast) {
     if (trackId) {
