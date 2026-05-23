@@ -27,7 +27,9 @@ import 'package:go_router/go_router.dart';
 import 'package:neptun_alarm_app/config/api_config.dart';
 import 'package:neptun_alarm_app/config/prefs_keys.dart';
 import 'package:neptun_alarm_app/core/di/service_locator.dart';
+import 'package:neptun_alarm_app/core/navigation/push_deep_link.dart';
 import 'package:neptun_alarm_app/core/pro/pro_features.dart';
+import 'package:neptun_alarm_app/features/notifications/notification_prefs_controller.dart';
 
 // Track last notification to prevent duplicates (for foreground only)
 String _lastNotificationKey = '';
@@ -1473,7 +1475,7 @@ class NotificationService {
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         debugPrint('Notification clicked: ${response.payload}');
-        _navigateToMapFromNotification();
+        _navigateFromNotificationPayload(response.payload);
       },
     );
 
@@ -1796,10 +1798,10 @@ class NotificationService {
     // NOTE: onBackgroundMessage is registered in main() before runApp()
     // to ensure it works even when the app is terminated.
 
-    // Handle notification taps when app is in background — open to Map
+    // Handle notification taps when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Message clicked: ${message.notification?.title}');
-      _navigateToMapFromNotification();
+      _navigateFromNotificationData(message.data);
     });
 
     // App opened from terminated state by tapping notification
@@ -1810,7 +1812,7 @@ class NotificationService {
       );
       Future.delayed(
         const Duration(milliseconds: 600),
-        _navigateToMapFromNotification,
+        () => _navigateFromNotificationData(initialMessage.data),
       );
     }
 
@@ -1892,10 +1894,27 @@ class NotificationService {
     });
   }
 
-  void _navigateToMapFromNotification() {
+  void _navigateFromNotificationPayload(String? payload) {
+    if (payload == null || payload.isEmpty) {
+      _navigateFromNotificationData(const {});
+      return;
+    }
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map) {
+        _navigateFromNotificationData(Map<String, dynamic>.from(decoded));
+        return;
+      }
+    } catch (_) {
+      // Not JSON — fall through to map.
+    }
+    _navigateFromNotificationData(const {});
+  }
+
+  void _navigateFromNotificationData(Map<String, dynamic> data) {
     try {
       if (sl.isRegistered<GoRouter>()) {
-        sl<GoRouter>().go('/');
+        PushDeepLink.navigate(sl<GoRouter>(), data);
       }
     } catch (e) {
       debugPrint('Notification tap navigate error: $e');
@@ -2572,6 +2591,12 @@ class NotificationService {
           _deferredRegisterTimer = null;
           debugPrint(
             '✅ Device registered successfully with ID: $_deviceId, platform: $platform',
+          );
+          unawaited(
+            NotificationPrefsController().syncToBackend(
+              deviceId: _deviceId!,
+              fcmToken: _fcmToken,
+            ),
           );
           return;
         }

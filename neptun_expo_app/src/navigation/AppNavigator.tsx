@@ -4,12 +4,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { NeptunTabBar } from '../components/NeptunTabBar';
-import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { useLegacyColors } from '../theme/useAppTheme';
 import { AlarmHistoryScreen } from '../screens/AlarmHistoryScreen';
 import { ChatAdminScreen } from '../screens/ChatAdminScreen';
 import { ComplaintsScreen } from '../screens/ComplaintsScreen';
-import { ChatScreen } from '../screens/ChatScreen';
+import { ChatConversationScreen } from '../screens/ChatConversationScreen';
 import { HeatmapScreen } from '../screens/HeatmapScreen';
 import { MapScreen } from '../screens/MapScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
@@ -41,7 +41,7 @@ function MainTabs() {
         component={RegionsScreen}
         options={{ title: 'Регіони', tabBarLabel: 'Регіони' }}
       />
-      <Tabs.Screen name="Chat" component={ChatScreen} options={{ title: 'Чат', tabBarLabel: 'Чат' }} />
+      <Tabs.Screen name="Chat" component={ChatConversationScreen} options={{ title: 'Чат', tabBarLabel: 'Чат' }} />
       <Tabs.Screen
         name="Profile"
         component={ProfileScreen}
@@ -52,6 +52,7 @@ function MainTabs() {
 }
 
 export function AppNavigator() {
+  const c = useLegacyColors();
   const [gate, setGate] = useState<'loading' | 'onboarding' | 'main'>('loading');
 
   useEffect(() => {
@@ -59,18 +60,18 @@ export function AppNavigator() {
   }, []);
 
   if (gate === 'loading') {
-    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+    return <View style={{ flex: 1, backgroundColor: c.bg }} />;
   }
 
   return (
     <Stack.Navigator
       initialRouteName={gate === 'onboarding' ? 'Onboarding' : 'MainTabs'}
       screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontFamily: fonts.semiBold, fontSize: 18, color: colors.text },
+        headerStyle: { backgroundColor: c.bg },
+        headerTintColor: c.text,
+        headerTitleStyle: { fontFamily: fonts.semiBold, fontSize: 18, color: c.text },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: colors.bg },
+        contentStyle: { backgroundColor: c.bg },
       }}
     >
       <Stack.Screen

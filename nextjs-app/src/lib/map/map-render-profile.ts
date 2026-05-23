@@ -56,8 +56,8 @@ export function resolveMapRenderProfile(input: {
   const kind: MapRuntimeProfileKind = input.isEmbed ? 'webview' : isTouch ? 'mobile' : 'desktop';
   const lowInteraction = kind !== 'desktop';
 
-  /** Десктоп, мобільний браузер і WebView (`?embed=1`) — один векторний темний базовий шар (OFM / OpenFreeMap). */
-  const basemap: MapBasemapKind = 'rasterVectorDark';
+  /** Десктоп, мобільний браузер і WebView (`?embed=1`) — hybrid: супутник + OFM дороги/лейбли. */
+  const basemap: MapBasemapKind = 'radarHybrid';
   const lowTileMode = false;
 
   return {

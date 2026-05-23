@@ -40,6 +40,10 @@ function createDeps(
       nicknames.find((entry) => entry.device_id === deviceId)?.nickname || null,
     getRecentDeviceForNickname: (nickname: string) =>
       recentDevicesByNickname[nickname.toLowerCase()],
+    collectDevicesForNickname: (nickname: string) => {
+      const id = recentDevicesByNickname[nickname.toLowerCase()];
+      return id ? [id] : [];
+    },
   };
 }
 
@@ -243,6 +247,45 @@ test('massUnbanChatBans expired removes only expired', () => {
   const r = massUnbanChatBans('expired', deps);
   assert.equal(r.removed, 1);
   assert.equal(r.remaining, 2);
+});
+
+test('banChatUser allows nickname-only ban when device unknown (legacy app)', () => {
+  const deps = createDeps([], [], {});
+  const result = banChatUser(
+    {
+      nickname: 'UnknownGuest',
+      bannedBy: 'mod-1',
+      defaultReason: 'rules',
+    },
+    deps,
+  );
+  assert.equal(result.status, 'created');
+  assert.equal(result.entry.nickname, 'UnknownGuest');
+  assert.equal(result.entry.device_id, '');
+});
+
+test('banChatUser bans every device_id seen under the same nickname in chat', () => {
+  const deps = createDeps(
+    [],
+    [],
+    { spamer: 'device-a' },
+  );
+  (deps as ReturnType<typeof createDeps> & {
+    collectDevicesForNickname: (n: string) => string[];
+  }).collectDevicesForNickname = () => ['device-a', 'device-b'];
+
+  const result = banChatUser(
+    {
+      nickname: 'Spamer',
+      bannedBy: 'mod-1',
+      defaultReason: 'rules',
+    },
+    deps,
+  );
+  assert.equal(result.status, 'created');
+  assert.equal(listChatBans(deps).length, 2);
+  assert.ok(listChatBans(deps).some((b) => b.device_id === 'device-a'));
+  assert.ok(listChatBans(deps).some((b) => b.device_id === 'device-b'));
 });
 
 test('massUnbanChatBans all clears list', () => {

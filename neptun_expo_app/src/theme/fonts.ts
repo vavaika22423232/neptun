@@ -1,7 +1,15 @@
-/** Must match `useFonts` keys in `App.tsx`. */
+import { Platform } from 'react-native';
+
+const webFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif';
+
+function font(name: string) {
+  return Platform.OS === 'web' ? `${name}, ${webFallback}` : name;
+}
+
+/** Native values must match `useFonts` keys in `app/_layout.tsx`. */
 export const fonts = {
-  regular: 'PlusJakartaSans_400Regular',
-  medium: 'PlusJakartaSans_500Medium',
-  semiBold: 'PlusJakartaSans_600SemiBold',
-  bold: 'PlusJakartaSans_700Bold',
+  regular: font('PlusJakartaSans_400Regular'),
+  medium: font('PlusJakartaSans_500Medium'),
+  semiBold: font('PlusJakartaSans_600SemiBold'),
+  bold: font('PlusJakartaSans_700Bold'),
 } as const;

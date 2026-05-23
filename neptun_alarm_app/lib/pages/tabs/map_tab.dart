@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import '../../core/utils/app_debug_log.dart';
+import '../../features/map/presentation/widgets/map_situation_status_strip.dart';
+import '../../features/map/presentation/widgets/map_threat_marker_sheet.dart';
 import '../../services/map_ready_notifier.dart';
 import '../../services/moderator_service.dart';
 import '../../design/design_exports.dart';
@@ -18,7 +23,8 @@ class MapTab extends StatefulWidget {
   State<MapTab> createState() => _MapTabState();
 }
 
-class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
+class _MapTabState extends State<MapTab>
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   WebViewController? _controller;
   StreamSubscription<bool>? _moderatorSub;
   bool _isLoading = true;
@@ -52,6 +58,35 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     await ctrl.loadRequest(bootstrapUrl, headers: {'X-Auth-Secret': secret});
   }
 
+  Future<void> _injectAdminCredentials(WebViewController ctrl) async {
+    if (!ModeratorService.instance.isModerator) return;
+    final secret = await ModeratorService.instance.getSecret();
+    if (secret == null || secret.isEmpty) return;
+    final escaped = Uri.encodeComponent(secret);
+    await ctrl.runJavaScript(
+      'window.__ADMIN_SECRET = decodeURIComponent("$escaped");',
+    );
+  }
+
+  void _handleNeptunAppMessage(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final envelope = Map<String, dynamic>.from(decoded);
+      if (envelope['type'] != 'threat_marker_tap') return;
+      final markerDyn = envelope['marker'];
+      if (markerDyn is! Map) return;
+      final marker = Map<String, dynamic>.from(markerDyn);
+
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showMapThreatMarkerSheet(context, marker);
+      });
+    } catch (e, st) {
+      appTaggedLog('NeptunApp parse error: $e\n$st', tag: 'map_tab');
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -60,6 +95,7 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _moderatorSub = ModeratorService.instance.stream.listen((_) {
       final ctrl = _controller;
       if (ctrl == null) return;
@@ -72,7 +108,15 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     super.didChangeDependencies();
     if (!_webViewInitialized) {
       _webViewInitialized = true;
-      _initWebView();
+      if (Platform.isIOS) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Future.delayed(const Duration(milliseconds: 350), () {
+            if (mounted) _initWebView();
+          });
+        });
+      } else {
+        _initWebView();
+      }
     } else {
       _checkThemeAndReload();
     }
@@ -116,7 +160,8 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
               MapReadyNotifier.instance.markReady();
             }
           },
-          onPageFinished: (_) {
+          onPageFinished: (_) async {
+            await _injectAdminCredentials(ctrl);
             if (mounted) setState(() => _isLoading = false);
             MapReadyNotifier.instance.markReady();
           },
@@ -148,6 +193,14 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
           },
         ),
       );
+
+      ctrl.addJavaScriptChannel(
+        'NeptunApp',
+        onMessageReceived: (JavaScriptMessage message) {
+          _handleNeptunAppMessage(message.message);
+        },
+      );
+
       await _loadInitialRequest(ctrl);
       if (mounted) setState(() => _controller = ctrl);
     } catch (e) {
@@ -177,9 +230,20 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _moderatorSub?.cancel();
     _controller = null;
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final ctrl = _controller;
+    if (ctrl == null) return;
+    ctrl.runJavaScript(
+      "window.dispatchEvent(new Event('neptun:map-recover'));",
+    );
   }
 
   @override
@@ -270,7 +334,8 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
     return Stack(
       children: [
         if (_controller != null)
-          Platform.isAndroid
+          RepaintBoundary(
+            child: Platform.isAndroid
               ? WebViewWidget.fromPlatformCreationParams(
                   params: AndroidWebViewWidgetCreationParams(
                     controller:
@@ -279,6 +344,8 @@ class _MapTabState extends State<MapTab> with AutomaticKeepAliveClientMixin {
                   ),
                 )
               : WebViewWidget(controller: _controller!),
+          ),
+        const MapSituationStatusStrip(),
         if (_isLoading)
           Container(
             color: NeptunSurfaces.s0,

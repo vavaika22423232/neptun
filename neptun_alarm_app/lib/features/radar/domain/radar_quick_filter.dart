@@ -17,6 +17,15 @@ enum RadarQuickFilter {
 
   /// Вибухи, обстріли, артилерія.
   blasts,
+
+  /// ППО / перехоплення (за типом API, якщо є).
+  ppo,
+
+  /// Лише події в обраних користувачем областях.
+  myRegions,
+
+  /// Висока важливість (ракети, балістика, щільні БПЛА).
+  highPriority,
 }
 
 extension RadarQuickFilterLabels on RadarQuickFilter {
@@ -27,18 +36,24 @@ extension RadarQuickFilterLabels on RadarQuickFilter {
         RadarQuickFilter.aviation => 'Авіація',
         RadarQuickFilter.airRaid => 'Тривоги',
         RadarQuickFilter.blasts => 'Вибухи',
+        RadarQuickFilter.ppo => 'ППО',
+        RadarQuickFilter.myRegions => 'Мої області',
+        RadarQuickFilter.highPriority => 'Важливі',
       };
 }
 
 extension RadarQuickFilterMatching on RadarQuickFilter {
   /// Чи збігається сира мапа маркера з обраною категорією (`threatType`/`type` із API).
-  bool matchesMarker(Map<String, dynamic> m) {
+  bool matchesMarker(
+    Map<String, dynamic> m, {
+    Set<String> myRegions = const {},
+  }) {
     if (this == RadarQuickFilter.all) return true;
     final raw = (m['threatType'] ?? m['threat_type'] ?? m['type'] ?? '')
         .toString()
         .trim()
         .toLowerCase();
-    if (raw.isEmpty) return false;
+    if (raw.isEmpty && this != RadarQuickFilter.myRegions) return false;
 
     return switch (this) {
       RadarQuickFilter.all => true,
@@ -59,6 +74,27 @@ extension RadarQuickFilterMatching on RadarQuickFilter {
           'artillery',
           'obstril',
         }.contains(raw),
+      RadarQuickFilter.ppo =>
+        const {'pvo', 'ppo', 'air_defense'}.contains(raw),
+      RadarQuickFilter.myRegions => _matchesMyRegions(m, myRegions),
+      RadarQuickFilter.highPriority => const {
+          'raketa',
+          'missile',
+          'ballistic',
+          'shahed',
+          'drone',
+          'kab',
+        }.contains(raw),
     };
   }
+}
+
+bool _matchesMyRegions(Map<String, dynamic> m, Set<String> myRegions) {
+  if (myRegions.isEmpty) return false;
+  final place = (m['place'] ?? m['location'] ?? '').toString().toLowerCase();
+  if (place.isEmpty) return false;
+  for (final r in myRegions) {
+    if (place.contains(r.toLowerCase())) return true;
+  }
+  return false;
 }

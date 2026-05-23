@@ -10,8 +10,18 @@ interface MapLayersControlProps {
 
 const LAYERS: { value: MapBasemapKind; label: string; icon: React.ReactNode }[] = [
   {
+    value: 'radarHybrid',
+    label: 'Радар-гібрид',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden>
+        <path d="M4 14.5 12 4l8 10.5-8 5.5-8-5.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        <path d="M8.5 14.5h7M10 11.5h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.65" />
+      </svg>
+    ),
+  },
+  {
     value: 'rasterVectorDark',
-    label: 'Тактична (Темна)',
+    label: 'Векторна',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden>
         <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" opacity="0.9" />
@@ -21,7 +31,7 @@ const LAYERS: { value: MapBasemapKind; label: string; icon: React.ReactNode }[] 
   },
   {
     value: 'googleHybrid',
-    label: 'Супутник (Google)',
+    label: 'Супутник',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden>
         <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
@@ -54,7 +64,7 @@ export default function MapLayersControl({ basemap, onChange }: MapLayersControl
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--hud-border)] bg-[var(--hud-surface)] text-[var(--hud-text)] shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-all hover:bg-[var(--hud-hover)] active:scale-95 sm:h-10 sm:w-10"
+        className="flex h-11 w-11 items-center justify-center rounded-full cinematic-button shadow-[var(--hud-shadow)] sm:h-10 sm:w-10"
         aria-label="Змінити шар карти"
         title="Шари карти"
       >

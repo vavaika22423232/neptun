@@ -8,7 +8,7 @@ import '../../pages/tabs/radar_tab.dart';
 import '../../pages/tabs/chat_tab.dart';
 import '../../pages/tabs/profile_tab.dart';
 import '../../pages/onboarding_page.dart';
-import '../../pages/premium_page.dart';
+import '../../features/premium/presentation/paywall/premium_paywall_screen.dart';
 import '../../pages/feedback_page.dart';
 import '../../pages/feedback_moderation_page.dart';
 import '../../pages/admin_panel_page.dart';
@@ -23,7 +23,7 @@ import '../../features/history/presentation/alarm_history_page.dart';
 import '../../features/analytics/presentation/personal_analytics_page.dart';
 import '../../features/heatmap/presentation/heatmap_page.dart';
 import '../../features/briefing/presentation/briefing_page.dart';
-
+import 'app_redirect.dart';
 class AppRouter {
   final SharedPreferences prefs;
   late final GoRouter router;
@@ -33,12 +33,11 @@ class AppRouter {
       initialLocation: '/',
       redirect: (context, state) {
         final isFirstLaunch = prefs.getBool(PrefsKeys.firstLaunch) ?? true;
-        final location = state.matchedLocation;
-
-        if (isFirstLaunch && location != '/onboarding') return '/onboarding';
-        if (!isFirstLaunch && location == '/onboarding') return '/';
-
-        return null;
+        return resolveAppRedirect(
+          isFirstLaunch: isFirstLaunch,
+          location: state.matchedLocation,
+          uri: state.uri,
+        );
       },
       routes: [
         GoRoute(
@@ -90,7 +89,7 @@ class AppRouter {
         GoRoute(
           path: '/premium',
           pageBuilder: (context, state) =>
-              _fadeThroughPage(context, state, const PremiumPage()),
+              _fadeThroughPage(context, state, const PremiumPaywallScreen()),
         ),
         GoRoute(
           path: '/feedback',

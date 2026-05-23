@@ -59,6 +59,25 @@ function event(patch: Partial<CandidateEvent> = {}): CandidateEvent {
   };
 }
 
+test('maritime approach is treated as an observed sea position, not a target hint', () => {
+  const classified = classifyCandidateObservation(event({
+    place: 'Чорне море',
+    region: 'Одеська область',
+    lat: 45.99,
+    lng: 30.78,
+    count: 12,
+    raw: {
+      resolve_status: 'maritime_approach',
+      placement_mode: 'approximate',
+      text: '12х БпЛА курсом на Одесу з акваторії Чорного моря',
+    },
+  }));
+
+  assert.equal(classified.observation_quality, 'observed');
+  assert.equal(classified.coordinate_role, 'observation');
+  assert.equal(classified.public_position_policy, 'precise_pin');
+});
+
 test('single generic candidate event creates tracking target, not confirmed public marker', () => {
   const engine = new TargetTrackerEngine(settings());
   const decision = engine.ingest(event({ channel_priority: 3, confidence: 0.8 }));
@@ -517,8 +536,8 @@ test('targets age through stale and lost lifecycle without new ingest', () => {
   const created = engine.ingest(event({ fingerprint: 'age-a', threat_type: 'ballistic' }));
   assert.equal(created.target?.lifecycle_state, 'CONFIRMED');
 
-  const stale = engine.snapshot(now + 4 * 60_000)[0];
-  const lost = engine.snapshot(now + 6 * 60_000)[0];
+  const stale = engine.snapshot(now + 5 * 60_000)[0];
+  const lost = engine.snapshot(now + 9 * 60_000)[0];
 
   assert.equal(stale.lifecycle_state, 'STALE');
   assert.equal(lost.lifecycle_state, 'LOST');

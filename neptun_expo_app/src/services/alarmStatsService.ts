@@ -1,4 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { PrefsKeys } from '../config/prefsKeys';
+import { HEATMAP_STATE_SHORT_NAME_UK } from '../features/heatmap/constants/stateShortNames';
+import { aggregateHeatmapCountsByStateId } from '../features/heatmap/logic/heatmapAggregate';
+import { persistentStorage } from './persistentStorage';
 import type { AlarmRow } from '../types/map';
 
 const PREV_ACTIVE_KEY = 'expo_alarm_stats_prev_active_v1';
@@ -101,40 +105,64 @@ export async function getStatsTotals(): Promise<{ alarms: number; minutes: numbe
 
 export type HeatmapEntry = { region: string; count: number };
 
-export async function loadHeatmapEntries(): Promise<{
-  rows: HeatmapEntry[];
-  hasRegions: boolean;
-}> {
+async function loadHeatmapCountsByDisplayName(): Promise<Record<string, number>> {
   const keys = await AsyncStorage.getAllKeys();
-  const counts = new Map<string, number>();
+  const counts: Record<string, number> = {};
   for (const key of keys) {
     if (!key.startsWith('heatmap_count_')) continue;
     const n = Number((await AsyncStorage.getItem(key)) || '0') || 0;
     if (n <= 0) continue;
     const region = key.slice('heatmap_count_'.length).replace(/_/g, ' ');
-    counts.set(region, n);
+    counts[region] = (counts[region] ?? 0) + n;
+  }
+  return counts;
+}
+
+export type HeatmapSnapshot = {
+  countsByStateId: Record<string, number>;
+  oblastRanking: { name: string; count: number }[];
+  listRows: HeatmapEntry[];
+  hasRegions: boolean;
+  hasAnyMergedRow: boolean;
+};
+
+/** Flutter `HeatmapPage._loadHeatmap`. */
+export async function loadHeatmapSnapshot(): Promise<HeatmapSnapshot> {
+  const counts = await loadHeatmapCountsByDisplayName();
+  const selectedNames = persistentStorage.getStringList(PrefsKeys.selectedRegions);
+
+  const merged: Record<string, number> = {};
+  for (const name of selectedNames) merged[name] = counts[name] ?? 0;
+  for (const [region, c] of Object.entries(counts)) {
+    if (!(region in merged)) merged[region] = c;
   }
 
-  const selected = await AsyncStorage.getItem('selected_regions');
-  let selectedNames: string[] = [];
-  try {
-    const parsed = selected ? (JSON.parse(selected) as unknown) : [];
-    selectedNames = Array.isArray(parsed)
-      ? parsed.filter((x): x is string => typeof x === 'string')
-      : [];
-  } catch {
-    selectedNames = [];
-  }
+  const countsByStateId = aggregateHeatmapCountsByStateId(merged);
+  const oblastRanking = Object.entries(countsByStateId)
+    .filter(([, c]) => c > 0)
+    .map(([id, count]) => ({
+      name: HEATMAP_STATE_SHORT_NAME_UK[id] ?? `Область ${id}`,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
 
-  const merged = new Map<string, number>();
-  for (const n of selectedNames) merged.set(n, counts.get(n) ?? 0);
-  for (const [r, c] of counts) {
-    if (!merged.has(r)) merged.set(r, c);
-  }
-
-  const rows = [...merged.entries()]
+  const listRows = Object.entries(merged)
     .map(([region, count]) => ({ region, count }))
-    .sort((x, y) => y.count - x.count);
+    .sort((a, b) => b.count - a.count);
 
-  return { rows, hasRegions: selectedNames.length > 0 };
+  return {
+    countsByStateId,
+    oblastRanking,
+    listRows,
+    hasRegions: selectedNames.length > 0,
+    hasAnyMergedRow: Object.keys(merged).length > 0,
+  };
+}
+
+export async function loadHeatmapEntries(): Promise<{
+  rows: HeatmapEntry[];
+  hasRegions: boolean;
+}> {
+  const snap = await loadHeatmapSnapshot();
+  return { rows: snap.listRows, hasRegions: snap.hasRegions };
 }

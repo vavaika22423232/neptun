@@ -1,3 +1,6 @@
+/** Active air-alarm overlay on oblast / district map layers. */
+export const MAP_ALARM_COLOR = '#630e0e';
+
 /**
  * MapLibre paint/layout tokens — data-driven where possible (GPU),
  * no per-frame JS for marker styling.
@@ -8,8 +11,8 @@ export const MAP_NIGHT = {
   /** Oblast outline when zoomed in (zoom expression applied in layer) */
   oblastLine: 'rgba(148, 163, 184, 0.22)',
   /** Alarm fill — hex + окремий fill-opacity (пульс / fade). */
-  alarmFillHex: '#8f0000',
-  alarmFillDistrictHex: '#8f0000',
+  alarmFillHex: MAP_ALARM_COLOR,
+  alarmFillDistrictHex: MAP_ALARM_COLOR,
   /** Тьмяний фон для областей без тривоги, коли десь є активна тривога */
   calmDimFill: '#11171e',
 } as const;

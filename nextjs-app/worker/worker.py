@@ -8,7 +8,7 @@ handles cross-channel fusion (merging nearby markers of the same type).
 """
 
 from __future__ import annotations
-from typing import Any
+
 import asyncio
 import atexit
 import logging
@@ -34,7 +34,6 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest
 from dotenv import load_dotenv
-load_dotenv()
 
 # Configuration
 from constants import API_ID, API_HASH, CHANNELS, CHANNEL_META, THREAT_SPEEDS, LAUNCH_SITES, KAB_AIRFIELDS, CARDINAL_AIRFIELDS, CHANNEL_DEFAULT_OBLAST, REGION_TOPIC_MAP, RAION_NAME_TO_ID, REGION_TO_OBLAST_ID, is_gpt_parser_enabled
@@ -56,15 +55,12 @@ from geo.maritime_region import (
     is_maritime_context,
     maritime_current_position,
     normalize_maritime_marker_fields,
-    sea_lane_waypoints,
 )
 from geo.place_guardrails import validate_place_candidate
 from geo.rules import oblast_uk_name_to_hasc
 from geo.geo_decision import decide_resolved_location
 from core.chain_tracker import MessageChainTracker
 from core.placement_decision import decide_placement_mode
-from core.recon_policy import is_dorozvidka_message, recon_message_clears_uav_region
-from core.section_context import apply_section_oblast_hint
 from core.threat_kinematics import resolve_course_and_ticker_bearing
 from core.threat_taxonomy import PARSER_TO_PUBLIC_THREAT_TYPE
 
@@ -84,10 +80,10 @@ log = logging.getLogger(__name__)
 _session_string = os.getenv('TELEGRAM_SESSION', '')
 if _session_string:
     log.info("Using StringSession from TELEGRAM_SESSION env var")
-    client: TelegramClient = TelegramClient(StringSession(_session_string), API_ID, API_HASH)
+    client = TelegramClient(StringSession(_session_string), API_ID, API_HASH)
 else:
     log.warning("TELEGRAM_SESSION not set — using file session")
-    client: TelegramClient = TelegramClient('anon_worker', API_ID, API_HASH)
+    client = TelegramClient('anon_worker', API_ID, API_HASH)
 
 # ── Ingest endpoint ──────────────────────────────────────────────────────────
 INGEST_URL = os.getenv('INGEST_URL', '')
@@ -107,14 +103,16 @@ else:
 if not INGEST_SECRET:
     log.warning("INGEST_SECRET / AUTH_SECRET not set — ingest requests will be rejected!")
 
-
-# ── Ingest, admin feed, and Clear-region endpoints ──────────────────────────
+# ── Admin feed endpoint ─────────────────────────────────────────────────────
+# Derive from INGEST_URL: replace /api/ingest with /api/admin/feed/ingest
 FEED_URL = ''
 CLEAR_REGION_URL = ''
+DATA_URL = ''
 if INGEST_URL:
     _base = INGEST_URL.rsplit('/api/ingest', 1)[0]
     FEED_URL = f"{_base}/api/admin/feed/ingest"
     CLEAR_REGION_URL = f"{_base}/api/ingest/clear-region"
+    DATA_URL = f"{_base}/api/data"
     log.info(f"Feed endpoint: {FEED_URL}")
     log.info(f"Clear-region endpoint: {CLEAR_REGION_URL}")
 
@@ -136,9 +134,7 @@ def _ingest_coords_ok(data: dict) -> bool:
         return False
 
 
-# Parser event_types that skip regional alarm gate.
-# Only meta/admin events bypass — moving air threats still require alarm OR a
-# high-quality trajectory_approach resolve_status (see alarm gate at ingest time).
+# Parser event_types that skip regional alarm (meta / balloon). Others require active alarm.
 _ALARM_BYPASS_TYPES = frozenset({
     'alert',
     'allclear',
@@ -343,106 +339,77 @@ def _add_recent(data: dict):
     _recent_events.append(data)
 
 
-# ── P5-B: Multi-oblast alert fusion ──────────────────────────────────────────
-
-def _multi_oblast_confidence_boost(
-    event_type: str,
-    region: str | None,
-    recent_window_sec: float = 300.0,
-) -> float:
-    """
-    P5-B: When multiple simultaneous alerts for the same threat type appear in
-    different oblasts within `recent_window_sec`, it's a mass raid — boost confidence.
-    Returns a 0..0.15 additive confidence bonus.
-    """
-    import time
-    now = time.time()
-    cutoff = now - recent_window_sec
-    et_lower = (event_type or '').lower()
-    our_region = (region or '').lower().strip()
-
-    # Count distinct oblasts with a matching event_type in the window
-    seen_oblasts: set[str] = set()
-    for evt in _recent_events:
-        if not isinstance(evt, dict):
-            continue
-        evt_ts_raw = evt.get('created_at_epoch') or evt.get('ts')
-        if not evt_ts_raw:
-            continue
-        try:
-            evt_ts = float(evt_ts_raw)
-        except (TypeError, ValueError):
-            # Handle ISO datetime strings like '2026-05-18T20:42:15.961221+03:00'
-            try:
-                from datetime import datetime, timezone
-                evt_ts = datetime.fromisoformat(str(evt_ts_raw)).timestamp()
-            except Exception:
-                continue
-        if evt_ts > 1e10:
-            evt_ts /= 1000
-        if evt_ts < cutoff:
-            continue
-        evt_et = (evt.get('threat_type') or evt.get('type') or '').lower()
-        if not evt_et or evt_et not in et_lower and et_lower not in evt_et:
-            continue
-        evt_region = (evt.get('region') or evt.get('oblast') or '').lower().strip()
-        if evt_region and evt_region != our_region:
-            seen_oblasts.add(evt_region)
-
-    if len(seen_oblasts) >= 4:
-        return 0.15  # mass raid — 4+ oblasts
-    if len(seen_oblasts) >= 2:
-        return 0.08  # multi-oblast — 2-3 oblasts
-    return 0.0
-
-
 ingest_queue.on_ingest_success = _add_recent
 
 # ── Admin feed publisher ─────────────────────────────────────────────────────
 # Fire-and-forget POST to /api/admin/feed/ingest for pipeline visibility.
 # Non-blocking: runs in a thread, errors silently ignored (feed is non-critical).
 
-async def _publish_feed_event(**kwargs):
+async def _publish_feed_event(
+    *,
+    status: str,
+    channel_name: str,
+    msg_text: str,
+    channel_id: int = 0,
+    msg_id: int = 0,
+    reason: str = '',
+    threat_type: str = '',
+    entities_count: int = 0,
+    parser: str = '',
+    place: str = '',
+    region: str = '',
+    lat: float | None = None,
+    lng: float | None = None,
+    speed_kmh: float | None = None,
+    course_bearing: float | None = None,
+    track_id: str = '',
+    confidence: float | None = None,
+    resolve_status: str = '',
+    marker_id: str = '',
+    origin: str = '',
+    impact_place: str = '',
+    placement_mode: str = '',
+    public_broadcast: bool | None = None,
+):
     """Push a pipeline event to the admin feed. Non-blocking."""
     if not FEED_URL:
         return
-
     now_iso = datetime.now(KYIV_TZ).isoformat()
     event = {
         'ts': now_iso,
-        'status': kwargs.get('status') or '',
-        'channel_name': kwargs.get('channel_name') or '',
-        'channel_id': kwargs.get('channel_id') or 0,
-        'msg_id': kwargs.get('msg_id') or 0,
-        'msg_text': str(kwargs.get('msg_text') or '')[:300],
-        'reason': kwargs.get('reason') or '',
-        'threat_type': kwargs.get('threat_type') or '',
-        'entities_count': kwargs.get('entities_count') or 0,
-        'parser': kwargs.get('parser') or '',
-        'place': kwargs.get('place') or '',
-        'region': kwargs.get('region') or '',
-        'lat': kwargs.get('lat'),
-        'lng': kwargs.get('lng'),
-        'speed_kmh': kwargs.get('speed_kmh'),
-        'course_bearing': kwargs.get('course_bearing'),
-        'track_id': kwargs.get('track_id') or '',
-        'confidence': kwargs.get('confidence'),
-        'resolve_status': kwargs.get('resolve_status') or '',
-        'marker_id': kwargs.get('marker_id') or '',
-        'origin': kwargs.get('origin') or '',
-        'impact_place': kwargs.get('impact_place') or '',
-        'placement_mode': kwargs.get('placement_mode') or '',
-        'public_broadcast': kwargs.get('public_broadcast'),
+        'status': status,
+        'channel_name': channel_name,
+        'channel_id': channel_id,
+        'msg_id': msg_id,
+        'msg_text': msg_text[:300],
+        'reason': reason,
+        'threat_type': threat_type,
+        'entities_count': entities_count,
+        'parser': parser,
+        'place': place,
+        'region': region,
+        'lat': lat,
+        'lng': lng,
+        'speed_kmh': speed_kmh,
+        'course_bearing': course_bearing,
+        'track_id': track_id,
+        'confidence': confidence,
+        'resolve_status': resolve_status,
+        'marker_id': marker_id,
+        'origin': origin,
+        'impact_place': impact_place,
+        'placement_mode': placement_mode,
+        'public_broadcast': public_broadcast,
     }
     normalize_maritime_marker_fields(event)
-
-    strip_zero_keys = {'channel_id', 'msg_id', 'entities_count'}
+    # Remove None/empty values to save bandwidth
+    _STRIP_ZERO_KEYS = {'channel_id', 'msg_id', 'entities_count'}
     event = {
         k: v for k, v in event.items()
-        if v is not None and v != '' and not (v == 0 and k in strip_zero_keys)
+        if v is not None and v != '' and not (v == 0 and k in _STRIP_ZERO_KEYS)
     }
-    event['status'] = kwargs.get('status') or ''
-    event['channel_name'] = kwargs.get('channel_name') or ''
+    event['status'] = status
+    event['channel_name'] = channel_name
     event['ts'] = now_iso
 
     try:
@@ -453,77 +420,11 @@ async def _publish_feed_event(**kwargs):
             headers={'X-Auth-Secret': INGEST_SECRET},
             timeout=aiohttp.ClientTimeout(total=3),
         ) as resp:
-            await resp.read()
+            await resp.read()  # Fire-and-forget, but must consume body to release socket
             if resp.status >= 400:
                 log.warning('admin feed POST %s: HTTP %s', FEED_URL, resp.status)
     except Exception as e:
         log.warning('admin feed POST failed: %s', e)
-
-
-def _candidate_event_from_marker(data: dict) -> dict:
-    """Build the server-side tracking contract from worker evidence.
-
-    The worker may provide coordinate evidence and geocoder metadata, but the
-    Next.js tracker owns target lifecycle and public map publication.
-    """
-    raw_candidates = data.get('candidates')
-    geocoding_candidates: list[dict] = []
-    if isinstance(raw_candidates, list):
-        for c in raw_candidates[:10]:
-            if not isinstance(c, dict):
-                continue
-            lat = c.get('lat')
-            lng = c.get('lng') or c.get('lon')
-            if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
-                continue
-            geocoding_candidates.append({
-                'lat': float(lat),
-                'lng': float(lng),
-                **({'confidence': float(c.get('confidence'))} if isinstance(c.get('confidence'), (int, float)) else {}),
-                **({'source': str(c.get('source'))} if c.get('source') else {}),
-                **({'place': str(c.get('name') or c.get('place'))} if (c.get('name') or c.get('place')) else {}),
-                **({'region': str(c.get('oblast') or c.get('region'))} if (c.get('oblast') or c.get('region')) else {}),
-            })
-
-    locality: dict = {
-        'place': data.get('place') or data.get('location') or '',
-        'region': data.get('region') or data.get('oblast') or '',
-        'confidence': data.get('locality_confidence', data.get('confidence')),
-        'resolve_status': data.get('resolve_status') or '',
-        'placement_mode': data.get('placement_mode') or '',
-        'geocode_tier': data.get('geocode_tier') or '',
-        'candidates_count': data.get('candidates_count') if data.get('candidates_count') is not None else len(geocoding_candidates),
-    }
-    if isinstance(data.get('lat'), (int, float)) and isinstance(data.get('lng'), (int, float)):
-        locality['lat'] = float(data['lat'])
-        locality['lng'] = float(data['lng'])
-
-    event = {
-        'event_id': str(data.get('id') or data.get('msg_id') or ''),
-        'fingerprint': data.get('event_fingerprint'),
-        'raw_text': data.get('text') or '',
-        'source': data.get('channel_name') or data.get('channel') or '',
-        'channel_name': data.get('channel_name') or data.get('channel') or '',
-        'channel_priority': data.get('channel_priority'),
-        'ts': data.get('created_at_epoch') or data.get('ts') or data.get('date'),
-        'event_kind': data.get('event_kind') or 'observation',
-        'target_id': data.get('track_id'),
-        'threat_type': data.get('threat_type') or data.get('type') or data.get('event_type') or 'unknown',
-        'confidence': data.get('confidence'),
-        'bearing_deg': data.get('course_bearing') if data.get('course_bearing') is not None else data.get('ticker_bearing'),
-        'locality': locality,
-        'geocoding_candidates': geocoding_candidates,
-        'legacy_marker_id': data.get('id'),
-        'legacy_track_id': data.get('track_id'),
-        'count': data.get('count'),
-        'origin': data.get('origin'),
-        'flight_phase': data.get('flight_phase'),
-    }
-    return {k: v for k, v in event.items() if v is not None and v != ''}
-
-
-def _ingest_payload_for_data(data: dict) -> dict:
-    return {'candidate_event': _candidate_event_from_marker(data)}
 
 
 # ── Cross-channel deduplication: REMOVED ─────────────────────────────────────
@@ -561,8 +462,8 @@ async def _intelligence_save_loop():
 
 # ── Global Settings Sync ─────────────────────────────────────────────────────
 
-MIN_CONFIDENCE_THRESHOLD = 0.42
-MIN_CONFIDENCE_UAV_THRESHOLD: float | None = 0.28
+MIN_CONFIDENCE_THRESHOLD = 0.65
+MIN_CONFIDENCE_UAV_THRESHOLD: float | None = 0.45
 
 
 def _effective_min_confidence_for_event(event_type: str | None) -> float:
@@ -587,8 +488,6 @@ def _min_trusted_resolver_conf(event_type: str | None = None) -> float:
 
 def _cap_confidence_coarse_placements(confidence: float, resolve_status: str) -> float:
     """Centroid / heuristic sectors are not pin-accurate — stay below map threshold so UI filters them."""
-    if resolve_status == 'trajectory_approach':
-        return min(float(confidence), 0.72)
     coarse = frozenset({
         'oblast_fallback',
         'oblast_direction_only',
@@ -738,7 +637,7 @@ async def main():
     joined_count = 0
     for ch in CHANNELS:
         try:
-            await client.invoke(JoinChannelRequest(ch))
+            await client(JoinChannelRequest(ch))
             joined_count += 1
             log.info(f"  Joined channel: {ch}")
         except Exception as e:
@@ -1054,7 +953,6 @@ def _build_trajectory(
     channel_name: str = '',
     ai_analysis: dict | None = None,
     target_city_coords: tuple[float, float] | None = None,
-    sea_lane_wps: list | None = None,
 ) -> dict | None:
     """
     Build trajectory dict for a threat marker.
@@ -1088,6 +986,11 @@ def _build_trajectory(
         prediction_confidence = 0.75
         log.info(f"Trajectory: TARGET_CITY coords ({target_city_coords[0]:.3f}, {target_city_coords[1]:.3f})")
 
+    # ── 0. Consensus from multiple channels ──
+    ct = None
+    if ct:
+        pass
+
     # ── 1. AI deep analysis (GPT-4o-mini on every message) ──
     if not target_coords and ai_analysis:
         ai_target = ai_analysis.get('target_city')
@@ -1105,10 +1008,6 @@ def _build_trajectory(
             origin_coords = ai_analysis['origin_coords']
         if ai_analysis.get('waypoints'):
             waypoints = ai_analysis['waypoints']
-
-    # P5-A: Use sea lane waypoints if provided and none were set from AI
-    if sea_lane_wps and not waypoints:
-        waypoints = [[lat, lng] for lat, lng in sea_lane_wps]
 
     # ── 2. Explicit direction from parser (city name) ──
     if not target_coords and entities.direction:
@@ -1139,83 +1038,10 @@ def _build_trajectory(
             predicted = False
             prediction_confidence = 0.8
 
-    # ── 5. Smart Target Heuristic for UAVs (Default to Regional Centers) ──
-    if not target_coords and _is_uav_event(event_type):
-        from geo.resolver import REGIONAL_CENTERS
-        # Find if we are in an oblast that has a major center
-        if region and region in REGIONAL_CENTERS:
-            target_coords = REGIONAL_CENTERS[region]
-            source = 'regional_heuristic'
-            predicted = True
-            prediction_confidence = 0.35
-            log.info(f"Trajectory: heuristic → regional center of {region}")
-        elif not region:
-            # Fallback to Kyiv if no region but near Kyiv
-            kyiv_center = (50.450, 30.523)
-            dist_to_kyiv = _haversine_km(lat, lng, kyiv_center[0], kyiv_center[1])
-            if dist_to_kyiv < 200:
-                target_coords = kyiv_center
-                source = 'kyiv_heuristic'
-                predicted = True
-                prediction_confidence = 0.3
-                log.info("Trajectory: heuristic → Kyiv center (proximity)")
-
-    # ── 5-B. P5-C: Velocity-based target city prediction (no LLM) ──
-    # If there is a recent event from the same chain with a bearing, project forward to
-    # find the most likely target city by finding the nearest major city along that bearing.
-    if not target_coords:
-        try:
-            from geo.resolver import REGIONAL_CENTERS
-            bearing_deg = getattr(entities, 'bearing_deg', None)
-            if bearing_deg is not None and Number.isFinite(bearing_deg) if False else True:
-                pass
-            # Try heading from entities or recent events
-            chain_bearing = None
-            event_bearing = getattr(entities, 'bearing_deg', None)
-            if event_bearing is not None and isinstance(event_bearing, (int, float)):
-                chain_bearing = float(event_bearing)
-            if chain_bearing is None:
-                # Look for a recent event from same channel with a bearing_deg
-                for prev in reversed(list(_recent_events)[-10:]):
-                    if not isinstance(prev, dict):
-                        continue
-                    prev_et = (prev.get('threat_type') or prev.get('type') or '').lower()
-                    if (event_type or '').lower() not in prev_et and prev_et not in (event_type or '').lower():
-                        continue
-                    pb = prev.get('course_bearing') or prev.get('ticker_bearing')
-                    if pb is not None:
-                        try:
-                            chain_bearing = float(pb)
-                            break
-                        except (TypeError, ValueError):
-                            pass
-            if chain_bearing is not None:
-                # Project forward at nominal speed × 15 min to find landing area
-                speed_kmh_hint = THREAT_SPEEDS.get(event_type, 200)
-                proj_km = speed_kmh_hint * 0.25  # 15 min of travel
-                proj = _project_point(lat, lng, chain_bearing, proj_km)
-                # Find nearest regional center to projected point
-                best_city = None
-                best_dist = float('inf')
-                for city, city_coords in (REGIONAL_CENTERS or {}).items():
-                    d = _haversine_km(proj[0], proj[1], city_coords[0], city_coords[1])
-                    if d < best_dist:
-                        best_dist = d
-                        best_city = (city, city_coords)
-                if best_city and best_dist < 80:
-                    target_coords = best_city[1]
-                    source = 'velocity_prediction'
-                    predicted = True
-                    prediction_confidence = max(0.30, 0.55 - best_dist * 0.003)
-                    log.info(
-                        f"Trajectory: P5-C velocity → {best_city[0]} "
-                        f"(bearing={chain_bearing:.0f}°, proj_km={proj_km:.0f}, dist={best_dist:.0f}km)"
-                    )
-        except Exception as e:
-            log.debug(f'P5-C velocity prediction: {e}')
-
-    # ── 6. Learned targets (frequency-based, persisted on disk) ──
-    if not target_coords:
+    # ── 5. Learned targets (frequency-based, persisted on disk) ──
+    # For UAV/Shahed tracks this is intentionally opt-in: learned destination
+    # guesses look precise on the map but often behave like random movement.
+    if not target_coords and (not _is_uav_event(event_type) or _ALLOW_WEAK_UAV_TRAJECTORY):
         try:
             from learned_trajectory_targets import suggest_city_for_threat
             lc = suggest_city_for_threat(
@@ -1250,26 +1076,9 @@ def _build_trajectory(
                 prediction_confidence = ai_result.get('confidence', 0.4)
                 log.info(f"Trajectory: {source} → {target_city} (conf={prediction_confidence:.2f})")
 
-    # ── 7. Group bearing: when multiple direction entities share a region,
-    #       pick the bearing that is geometrically closest to the current track.
-    #       This prevents the wrong direction from being used when a message
-    #       lists multiple corridors (e.g. "Харків→Київ та Дніпро→Харків").
-    if not target_coords and hasattr(entities, 'directions') and entities.directions:
-        best_dir_coords = None
-        best_dir_dist = float('inf')
-        for direction_candidate in entities.directions:
-            dc = _geocode_direction_target(direction_candidate, region)
-            if dc:
-                d = _haversine_km(lat, lng, dc[0], dc[1])
-                if d < best_dir_dist:
-                    best_dir_dist = d
-                    best_dir_coords = dc
-        if best_dir_coords:
-            target_coords = best_dir_coords
-            source = 'group_bearing'
-            predicted = False
-            prediction_confidence = 0.75
-            log.info(f"Trajectory: group_bearing → closest of {len(entities.directions)} directions ({best_dir_dist:.0f} km)")
+    # Apply circling penalty
+    # (Removed group tracker circling penalty logic)
+    pass
 
     return _finalize_trajectory(
         lat, lng, target_coords, predicted, source, prediction_confidence,
@@ -1326,71 +1135,6 @@ def _finalize_trajectory(
     return out
 
 
-# ── P3-E: Altitude mode inference ────────────────────────────────────────────
-
-_BALLISTIC_RE = re.compile(
-    r'балістич|ракет[аиу]|крилат|гіперзвук|зенітн|мрлс|пуск|б-21|б-52'
-    r'|р-500|р-360|9м729|iskander|кинжал|kinzhal|shahed\s*136|шахед\s*136',
-    re.IGNORECASE,
-)
-_LOW_ALT_RE = re.compile(
-    r'\bбпла\b|fpv|shahed|shahid|шахед|герань|ланцет|мавік|mavic|orlan|орлан'
-    r'|\bдрон\b|\bUAV\b',
-    re.IGNORECASE,
-)
-
-def _infer_altitude_mode(text: str, event_type: str) -> str:
-    """P3-E: Infer altitude mode from message text and event type."""
-    if not text:
-        text = ''
-    if _BALLISTIC_RE.search(text):
-        return 'ballistic_arc'
-    if _LOW_ALT_RE.search(text):
-        return 'low_altitude'
-    # Fall back to event_type heuristic
-    et_lower = (event_type or '').lower()
-    if any(k in et_lower for k in ('missile', 'ballistic', 'kab', 'rocket')):
-        return 'ballistic_arc'
-    if any(k in et_lower for k in ('fpv', 'drone', 'shahed', 'uav', 'recon')):
-        return 'low_altitude'
-    return 'unknown'
-
-
-# ── P5-E: Trajectory confidence signal ───────────────────────────────────────
-
-def _compute_trajectory_confidence(
-    resolve_status: str | None,
-    confidence: float,
-    trajectory_data: dict | None,
-    ai_analysis: dict | None,
-) -> float:
-    """P5-E: Compute a 0–1 trajectory confidence score for the worker marker."""
-    base = float(confidence or 0.5)
-
-    # Boost for well-resolved statuses
-    rs = (resolve_status or '').lower()
-    if rs in ('ok', 'exact', 'point'):
-        base = min(0.95, base + 0.15)
-    elif rs in ('maritime_approach', 'estimated_trajectory'):
-        base = min(0.88, base + 0.08)
-    elif rs.startswith('estimated_') or rs.startswith('regional_'):
-        base = max(0.3, base - 0.1)
-    elif rs in ('failed', 'ambiguous_no_point'):
-        base = max(0.1, base - 0.25)
-
-    # Boost when AI analysis agrees with trajectory
-    if trajectory_data and ai_analysis:
-        ai_conf = float((ai_analysis or {}).get('confidence', 0) or 0)
-        if ai_conf > 0.7:
-            base = min(0.95, base + 0.05)
-
-    # Penalty when no trajectory is available
-    if not trajectory_data:
-        base = max(0.1, base - 0.2)
-
-    return round(max(0.05, min(0.99, base)), 3)
-
-
 def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: float) -> tuple[float, float]:
     """Project a point from (lat, lng) at given bearing and distance."""
     import math
@@ -1403,108 +1147,6 @@ def _project_point(lat: float, lng: float, bearing_deg: float, distance_km: floa
     lng2 = lng1 + math.atan2(math.sin(brng) * math.sin(d) * math.cos(lat1),
                               math.cos(d) - math.sin(lat1) * math.sin(lat2))
     return (math.degrees(lat2), math.degrees(lng2))
-
-
-def _coerce_latlng_pair(value) -> tuple[float, float] | None:
-    """Accept [lat,lng] / (lat,lng) / {'lat','lng'} produced by AI analysis."""
-    try:
-        if isinstance(value, dict):
-            lat = value.get('lat')
-            lng = value.get('lng') or value.get('lon')
-        elif isinstance(value, (list, tuple)) and len(value) >= 2:
-            lat, lng = value[0], value[1]
-        else:
-            return None
-        lat_f = float(lat)
-        lng_f = float(lng)
-        if not math.isfinite(lat_f) or not math.isfinite(lng_f):
-            return None
-        return (lat_f, lng_f)
-    except Exception:
-        return None
-
-
-def _default_approach_origin_label(channel_name: str, event_type: str, region: str | None) -> str | None:
-    """Best-effort launch direction when the message only says where the threat is heading."""
-    et = (event_type or '').lower().strip()
-    reg = (region or CHANNEL_DEFAULT_OBLAST.get(channel_name) or '').lower()
-
-    if et in {'kab', 'avia'}:
-        return None
-    if et in {'missile', 'raketa', 'krylata', 'pusk', 'ballistic', 'balistic'}:
-        if any(k in reg for k in ('сум', 'черніг', 'харків', 'полтав')):
-            return 'Курськ'
-        if any(k in reg for k in ('одес', 'микола', 'херсон', 'запор')):
-            return 'Крим'
-        return 'Бєлгород'
-
-    if et in {'shahed', 'uav', 'drone', 'fpv', 'recon', 'rozved'}:
-        if any(k in reg for k in ('одес', 'микола', 'херсон', 'запор', 'крим')):
-            return 'Чорне море'
-        if any(k in reg for k in ('сум', 'черніг')):
-            return 'Курськ'
-        if any(k in reg for k in ('харків', 'донець', 'луган')):
-            return 'Бєлгород'
-        return 'Крим'
-
-    return None
-
-
-def _resolve_approach_origin(
-    entities,
-    ai_analysis: dict | None,
-    channel_name: str,
-    event_type: str,
-    region: str | None,
-) -> tuple[float, float] | None:
-    """Resolve launch/source coords for destination-only reports."""
-    ai_origin_coords = _coerce_latlng_pair((ai_analysis or {}).get('origin_coords'))
-    if ai_origin_coords:
-        return ai_origin_coords
-
-    for raw_origin in (
-        (ai_analysis or {}).get('origin'),
-        getattr(entities, 'origin', None),
-        _default_approach_origin_label(channel_name, event_type, region),
-    ):
-        if not raw_origin:
-            continue
-        coords = _geocode_origin(str(raw_origin), allow_resolver_fallback=False)
-        if coords:
-            return coords
-    return None
-
-
-def _compute_flight_approach_pos(
-    origin: tuple[float, float],
-    target: tuple[float, float],
-    event_type: str,
-    chain_elapsed_sec: float | None = None,
-) -> tuple[tuple[float, float], float]:
-    """Return estimated current position and route progress for origin→target flight."""
-    speed = float(THREAT_SPEEDS.get(event_type, 170) or 170)
-    dist_km = _haversine_km(origin[0], origin[1], target[0], target[1])
-    if dist_km < 10:
-        return target, 1.0
-    if chain_elapsed_sec is not None and chain_elapsed_sec > 0:
-        progress = min(0.90, max(0.08, (chain_elapsed_sec / 3600.0 * speed) / dist_km))
-    else:
-        progress = 0.35
-    bearing = _compute_bearing(origin[0], origin[1], target[0], target[1])
-    current = _project_point(origin[0], origin[1], bearing, dist_km * progress)
-    return current, progress
-
-
-def _chain_elapsed_seconds(parent, now_dt: datetime) -> float | None:
-    ts = getattr(parent, 'first_seen_ts', None)
-    if isinstance(ts, (int, float)):
-        return max(0.0, now_dt.timestamp() - float(ts))
-    parent_dt = getattr(parent, 'timestamp', None)
-    if isinstance(parent_dt, datetime):
-        if parent_dt.tzinfo is None:
-            parent_dt = parent_dt.replace(tzinfo=KYIV_TZ)
-        return max(0.0, (now_dt - parent_dt).total_seconds())
-    return None
 
 
 # Map parser event_type to frontend icon names (must match THREAT_ICONS keys)
@@ -1651,53 +1293,31 @@ async def process_new_message(event):
     #    Content-hash dedup must NOT run on plain posts: after `_cleanup()` the older
     #    `channel_id:msg_id` key can be evicted while `...content:digest` remains → false "same content".
     if not is_edit and db.is_message_processed(channel_id, msg_id):
+        await _publish_feed_event(
+            status='skipped', channel_name=channel_name, msg_text=msg_text,
+            channel_id=channel_id, msg_id=msg_id, reason='already processed (msg dedup)',
+        )
         return
     if is_edit and db.is_message_content_processed(channel_id, msg_id, msg_text):
+        await _publish_feed_event(
+            status='skipped', channel_name=channel_name, msg_text=msg_text,
+            channel_id=channel_id, msg_id=msg_id, reason='already processed (unchanged edit)',
+        )
         return
     db.mark_message_processed_pair(channel_id, msg_id, msg_text)
 
+    # 2. GPT-primary pipeline with regex fallback
     # Step 2a: Fast pre-filter (spam, summaries, negations) — no API cost
-    # Allow summaries if they contain active movement patterns, so they can be split/processed.
-    _is_summary = is_skip_message(msg_text)
-    _has_active_movement = bool(re.search(r'БпЛА\s+курсом\s+на', msg_text, re.IGNORECASE))
-    if _is_summary and not _has_active_movement:
+    if is_skip_message(msg_text):
         log.debug(f"FILTER [{channel_name}]: skipped: {msg_text[:80]}")
+        await _publish_feed_event(
+            status='skipped', channel_name=channel_name, msg_text=msg_text,
+            channel_id=channel_id, msg_id=msg_id, reason='pre-filter (spam/summary)',
+        )
         return
 
-    # Step 2b: Extract sections from multi-region summary
-    from core.parser_v2 import _split_multi_entry
-    all_raw_entries = _split_multi_entry(msg_text)
-    if not all_raw_entries:
-        all_raw_entries = [(extract_header_oblast(msg_text), msg_text)]
-
-    log.info(f"PROCESSING [{channel_name}]: {len(all_raw_entries)} sections to parse")
-
-    for section_oblast, section_text in all_raw_entries:
-        await _process_threat_message_content(
-            section_text=section_text,
-            msg_text=msg_text,
-            channel_id=channel_id,
-            msg_id=msg_id,
-            channel_name=channel_name,
-            section_oblast=section_oblast,
-            reply_to_msg_id=reply_to_msg_id,
-            event=event,
-            is_multi_section=(len(all_raw_entries) > 1)
-        )
-
-async def _process_threat_message_content(
-    section_text: str,
-    msg_text: str,
-    channel_id: int,
-    msg_id: int,
-    channel_name: str,
-    section_oblast: str | None,
-    reply_to_msg_id: int | None,
-    event: Any,
-    is_multi_section: bool = False
-    ):
-    """Core logic to parse, geocode, and publish markers for a (sub)message."""
-    channel_meta = CHANNEL_META.get(channel_name, {})
+    # Step 2b: Extract header oblast for GPT context
+    header_oblast = extract_header_oblast(msg_text)
 
     # Step 2b+: Early chain lookup for reply context (before GPT call)
     # If this message is a reply, inject parent context into GPT prompt
@@ -1706,17 +1326,17 @@ async def _process_threat_message_content(
         _early_parent = chain_tracker.find_parent(
             channel_id=channel_id,
             reply_to_msg_id=reply_to_msg_id,
-            event_type='uav',  # placeholder
+            event_type='uav',  # placeholder — reply_to match ignores event_type
         )
         if _early_parent:
             _parent_context_str = _early_parent.to_context_string()
+            log.info(f"REPLY_CONTEXT [{channel_name}]: msg reply_to={reply_to_msg_id} → {_parent_context_str}")
 
     # Step 2c: GPT parse (primary)
     gpt_result = None
     try:
-        # Use section_text and section_oblast for granular parsing
         gpt_result = await asyncio.to_thread(
-            gpt_parse_message, section_text, channel_name, section_oblast, _parent_context_str
+            gpt_parse_message, msg_text, channel_name, header_oblast, _parent_context_str
         )
     except Exception as e:
         log.warning(f"GPT parser exception (non-fatal): {e}")
@@ -1725,8 +1345,8 @@ async def _process_threat_message_content(
     if gpt_result is not None:
         gpt_entities, gpt_is_threat = gpt_result
         _gpt_raw_len = len(gpt_entities or [])
-        all_entities = gpt_to_parsed_entities(gpt_entities, section_text)
-        _regex_allclear = detect_allclear_keywords(section_text)
+        all_entities = gpt_to_parsed_entities(gpt_entities, msg_text)
+        _regex_allclear = detect_allclear_keywords(msg_text)
         if all_entities and any(e.is_allclear for e in all_entities) and not _regex_allclear:
             _hard_allclear = re.search(
                 r'\b(?:побили|зняли\s+загроз|загрозу\s+зняли|збили|збит[а-яіїєґ]*|'
@@ -1746,11 +1366,11 @@ async def _process_threat_message_content(
             has_allclear = any(e.is_allclear for e in all_entities)
             if not has_allclear:
                 from core.parser_v2 import ParsedEntities, extract_oblast_authority
-                ac_oblast = section_oblast or extract_oblast_authority(section_text)
+                ac_oblast = header_oblast or extract_oblast_authority(msg_text)
                 all_entities.append(ParsedEntities(
                     event_type='allclear',
                     oblast=ac_oblast,
-                    raw_text=section_text[:200],
+                    raw_text=msg_text[:200],
                     is_allclear=True,
                 ))
                 log.info(f"ALLCLEAR_CROSSCHECK [{channel_name}]: forced allclear for {ac_oblast}")
@@ -1759,7 +1379,7 @@ async def _process_threat_message_content(
                      f"{[e.event_type for e in all_entities]}")
         elif gpt_is_threat and _gpt_raw_len == 0:
             # GPT said is_threat=true but returned zero raw entities → parsing glitch, try regex
-            all_entities = extract_all_entities(section_text)
+            all_entities = extract_all_entities(msg_text)
             if all_entities:
                 log.warning(f"GPT_EMPTY_FALLBACK [{channel_name}]: regex recovered → "
                             f"{len(all_entities)} entities: {[e.event_type for e in all_entities]}")
@@ -1776,7 +1396,7 @@ async def _process_threat_message_content(
         ):
             # UkraineAlarmSignal, povitryanatrivogaaa: critical alerts must not be dropped
             # "🛸 Яготин (Київська обл.) Загроза застосування БПЛА" — GPT may return empty
-            all_entities = extract_all_entities(section_text)
+            all_entities = extract_all_entities(msg_text)
             if all_entities:
                 log.warning(f"GPT_EMPTY_FORCE_FALLBACK [{channel_name}]: regex recovered → "
                             f"{len(all_entities)} entities: {[e.event_type for e in all_entities]}")
@@ -1784,7 +1404,7 @@ async def _process_threat_message_content(
     else:
         # GPT failed (timeout/error) → full regex fallback
         gpt_entities = None  # ensure defined for parser= in _publish_feed_event
-        all_entities = extract_all_entities(section_text)
+        all_entities = extract_all_entities(msg_text)
         if all_entities:
             log.warning(f"GPT_FAIL [{channel_name}]: using regex fallback → "
                         f"{len(all_entities)} entities")
@@ -1793,10 +1413,19 @@ async def _process_threat_message_content(
 
     if not all_entities:
         log.debug(f"DROP [{channel_name}]: both parsers returned empty for: {msg_text[:80]}")
+        await _publish_feed_event(
+            status='dropped', channel_name=channel_name, msg_text=msg_text,
+            channel_id=channel_id, msg_id=msg_id, reason='both parsers empty',
+            parser='both_empty',
+        )
         return
 
     # Skip negation-only messages
     if len(all_entities) == 1 and all_entities[0].is_negation:
+        await _publish_feed_event(
+            status='skipped', channel_name=channel_name, msg_text=msg_text,
+            channel_id=channel_id, msg_id=msg_id, reason='negation-only',
+        )
         return
 
     now_kyiv = datetime.now(KYIV_TZ)
@@ -1809,6 +1438,11 @@ async def _process_threat_message_content(
         # After merge, unknown entities only remain if BOTH parsers failed
         if entities.event_type == 'unknown':
             log.debug(f"DROP [{channel_name}]: unknown type after merge: {entities.raw_text[:60]}")
+            await _publish_feed_event(
+                status='dropped', channel_name=channel_name, msg_text=msg_text,
+                channel_id=channel_id, msg_id=msg_id, reason='unknown type after merge',
+                threat_type='unknown',
+            )
             continue
         if entities.is_allclear:
             oblast = entities.oblast
@@ -1839,6 +1473,11 @@ async def _process_threat_message_content(
             continue
         if entities.event_type == 'alert':
             log.debug(f"ALERT skip (shown via SVG): {entities.place_name} ({entities.oblast})")
+            await _publish_feed_event(
+                status='skipped', channel_name=channel_name, msg_text=msg_text,
+                channel_id=channel_id, msg_id=msg_id, reason='alert (shown via SVG)',
+                threat_type='alert', region=entities.oblast, place=entities.place_name,
+            )
             continue
 
         # ── Post-GPT type correction ──────────────────────────────────
@@ -1862,35 +1501,12 @@ async def _process_threat_message_content(
                 entities.place_name = _cleaned
 
         # ── NLP Augmentation ─────────────────────────────────────────
-        _course_only_without_current = False
         try:
             from core.parser_nlp import augment_parsed_entities_with_nlp
-            _raw_for_nlp = entities.raw_text or msg_text
-            _course_only_without_current = (
-                entities.event_type in {
-                    'uav', 'drone', 'shahed', 'recon', 'rozved', 'fpv',
-                    'missile', 'raketa', 'krylata', 'ballistic', 'balistic', 'pusk', 'kab',
-                }
-                and not entities.place_name
-                and (getattr(entities, 'target_city', None) or entities.direction)
-                and not re.search(
-                    r'\b(?:над|біля|поблизу|повз|район[іу]?|в\s+районі|у\s+районі|'
-                    r'возле|в\s+районе|у\s+района|навпроти|виліз|вилiз|вылез|'
-                    r'зайшов|залетів|залетiв)\b',
-                    _raw_for_nlp,
-                    re.IGNORECASE,
-                )
-            )
-            if _course_only_without_current:
-                log.debug(
-                    f"PLACE_NLP_SKIP [{channel_name}]: target/course-only entity, "
-                    f"target={getattr(entities, 'target_city', None) or entities.direction}"
-                )
-            else:
-                _nlp_place = augment_parsed_entities_with_nlp(_raw_for_nlp, entities.place_name)
-                if _nlp_place != entities.place_name:
-                    log.info(f"PLACE_NLP_AUGMENT [{channel_name}]: '{entities.place_name}' → '{_nlp_place}'")
-                    entities.place_name = _nlp_place
+            _nlp_place = augment_parsed_entities_with_nlp(entities.raw_text or msg_text, entities.place_name)
+            if _nlp_place != entities.place_name:
+                log.info(f"PLACE_NLP_AUGMENT [{channel_name}]: '{entities.place_name}' → '{_nlp_place}'")
+                entities.place_name = _nlp_place
         except ImportError:
             pass
 
@@ -1926,27 +1542,19 @@ async def _process_threat_message_content(
                 log.info(f"KHERSON_PLACE_HINT [{channel_name}]: '{_pn or '(empty)'}' → '{_kh_hint}'")
                 entities.place_name = _kh_hint
 
-        # Recon/дорозвідка is a status signal, not an automatic oblast-wide allclear.
-        # Only explicit clear wording may remove active UAV markers.
+        # Recon/дорозвідка suppresses UAV groups
+        # Oblast-level "дорозвідка" (keyword present, no place_name) = allclear for UAVs
         # Place-level recon = suppress at place only (still ingest marker)
         # Generic recon without "дорозвідк/дорозведк" keyword = regular recon sighting (ingest marker)
         if entities.event_type == 'recon' and entities.oblast:
-            _is_dorozvidka = is_dorozvidka_message(msg_text)
-            if recon_message_clears_uav_region(msg_text, entities.place_name):
+            _is_dorozvidka = bool(re.search(r'дорозв[іе]дк', msg_text, re.IGNORECASE))
+            if not entities.place_name and _is_dorozvidka:
+                # Oblast-level дорозвідка — clear all UAV markers in this oblast
                 await _clear_region_markers(entities.oblast, ['shahed', 'rozved'])
                 log.info(f"RECON-ALLCLEAR [{channel_name}]: cleared UAVs in {entities.oblast}")
                 await _publish_feed_event(
                     status='processed', channel_name=channel_name, msg_text=msg_text,
                     channel_id=channel_id, msg_id=msg_id, threat_type='recon',
-                    region=entities.oblast, place=entities.place_name,
-                )
-                continue
-            if not entities.place_name and _is_dorozvidka:
-                log.info(f"RECON-STATUS [{channel_name}]: dorozvidka status in {entities.oblast}, no map clear")
-                await _publish_feed_event(
-                    status='processed', channel_name=channel_name, msg_text=msg_text,
-                    channel_id=channel_id, msg_id=msg_id, threat_type='recon',
-                    reason='dorozvidka status without explicit allclear',
                     region=entities.oblast, place=entities.place_name,
                 )
                 continue
@@ -1964,7 +1572,7 @@ async def _process_threat_message_content(
             oblast=entities.oblast or '',
             origin=getattr(entities, 'origin', None),
             raw_text=msg_text,
-            exclude_msg_id=msg_id if (is_multi_section or len(all_entities) > 1) else None,
+            exclude_msg_id=msg_id if len(all_entities) > 1 else None,
         )
         if _pre_dup_parent:
             log.info(
@@ -1979,15 +1587,12 @@ async def _process_threat_message_content(
         _ent_dict = entities.to_entities_dict()
         if channel_name == KHERSON_NON_DRONE_CH:
             _ent_dict['geo_city_hint'] = KHERSON_GEO_CITY_HINT
-        _oblast_from_section_header = apply_section_oblast_hint(entities, _ent_dict, section_oblast)
-        _section_oblast_hint = (section_oblast or '').strip()
         _oblast_from_explicit_paren = False
-        _oblast_text_scope = section_text if _section_oblast_hint else msg_text
         # Явна область у дужках у тексті — завжди сильніша за GPT (раніше ігнорувалась, якщо GPT вже підставив область).
         # Дужки + скорочення «обл.»; підтримка дефіса (Івано-Франківська)
         _region_paren = re.search(
             r'\((?:Республіка\s+)?([\s\-А-ЯІЇЄҐа-яіїєґ]+?(?:\s+область|\s+обл\.?)?)\)',
-            _oblast_text_scope,
+            msg_text,
             re.IGNORECASE,
         )
         if _region_paren:
@@ -2008,19 +1613,14 @@ async def _process_threat_message_content(
         if not _oblast_from_explicit_paren and not _parser_provided_oblast:
             try:
                 from geo.oblast_coherence import find_explicit_oblast_mention
-                _ob_mentioned = find_explicit_oblast_mention(_oblast_text_scope)
+                _ob_mentioned = find_explicit_oblast_mention(msg_text)
                 if _ob_mentioned:
                     _ent_dict['oblast'] = _ob_mentioned
                     _oblast_from_explicit_text = True
                     log.debug(f"Explicit oblast in message body: → {_ob_mentioned}")
             except ImportError:
                 pass
-        _oblast_explicit_any = (
-            _oblast_from_explicit_paren
-            or _oblast_from_explicit_text
-            or _oblast_from_section_header
-            or bool(_parser_provided_oblast)
-        )
+        _oblast_explicit_any = _oblast_from_explicit_paren or _oblast_from_explicit_text
         # Якщо place_name сам є назвою області — не дозволяти каналу перекривати
         _pn_as_oblast = None
         if not _oblast_explicit_any:
@@ -2035,10 +1635,11 @@ async def _process_threat_message_content(
                     _ent_dict['oblast'] = _pn_as_oblast
                     _oblast_explicit_any = True
                     log.debug(f"place_name IS an oblast name: '{_pn_raw}' → {_pn_as_oblast}")
-        _oblast_gate_hint = (_ent_dict.get('oblast') or '').strip() or None if _oblast_explicit_any else None
+        _oblast_gate_hint = (_ent_dict.get('oblast') or '').strip() or None
         if not _ent_dict.get('oblast') and channel_name in CHANNEL_DEFAULT_OBLAST:
             _ent_dict['oblast'] = CHANNEL_DEFAULT_OBLAST[channel_name]
             log.debug(f"Injecting channel-default oblast hint: {_ent_dict['oblast']} for {channel_name}")
+            _oblast_gate_hint = (_ent_dict.get('oblast') or '').strip() or None
         # Регіональні канали (eyes_everywhere → Запоріжжя): GPT часто «переносить» топонім в іншу область-омонім.
         # Без явних дужок у тексті — геокодимо рухомі загрози в «домашній» області каналу, не в Чернівцях тощо.
         # КАБ/ракети не форсуємо «домашньою» областю каналу — лише БПЛА/розвідка.
@@ -2121,13 +1722,6 @@ async def _process_threat_message_content(
             resolve_status = geo_decision.status
             candidates_json = [c.to_dict() for c in resolved.chosen_from[:3]]
             raion_name = resolved.raion
-
-            if getattr(resolved, 'is_predictive', False):
-                # We geocoded the target city, but no current position was provided.
-                # Clear coords here so the downstream "target-only" offset logic can handle it
-                # by placing the marker *before* the city along the approach path.
-                coords = None
-                log.info(f"PREDICTIVE-FALLBACK [{channel_name}]: {location} is target-only, clearing coords for offset logic")
             # Major gazetteer hit: slight boost so borderline resolver scores still map
             if resolved.chosen_from and confidence < MIN_CONFIDENCE_THRESHOLD + 0.05:
                 best = resolved.chosen_from[0]
@@ -2217,7 +1811,6 @@ async def _process_threat_message_content(
         # ── Estimated-offset: shift marker from target to estimated current position ──
         # Must run BEFORE oblast fallback so target_city offset takes priority
         _target_coords = None
-        _sea_lane_wps: list | None = None  # P5-A: sea lane routing waypoints
         _target_city = getattr(entities, 'target_city', None)
         if not _target_city and entities.direction:
             _dir_lower = entities.direction.lower().strip()
@@ -2230,13 +1823,6 @@ async def _process_threat_message_content(
         if _maritime_current and not _origin_raw:
             _origin_raw = 'Чорне море'
             _maritime_origin_synthetic = True
-        if _maritime_current and not _target_city and getattr(entities, 'near', None):
-            _target_city = entities.near
-            entities.target_city = _target_city
-            log.info(
-                f"MARITIME-REFERENCE [{channel_name}]: using near='{entities.near}' "
-                f"as offshore reference target"
-            )
 
         # Normalize target_city and origin via ORIGIN_NORMALIZATION so "Полтавщина"→"Полтава",
         # "Сумщина"→"Суми" — geocoders need city names, not oblique oblast forms
@@ -2322,18 +1908,10 @@ async def _process_threat_message_content(
                 location = _sea_label
                 confidence = max(confidence, 0.62)
                 resolve_status = 'maritime_approach'
-                # P5-A: add realistic sea lane waypoints for the maritime approach trajectory
-                _origin_for_lanes = _origin_coords or (45.95, 31.05)
-                _sea_lane_wps = sea_lane_waypoints(_origin_for_lanes, _tc, region)
-                if _sea_lane_wps:
-                    log.debug(
-                        f"SEA-LANE [{channel_name}]: {len(_sea_lane_wps)} waypoints "
-                        f"from ({_origin_for_lanes[0]:.2f},{_origin_for_lanes[1]:.2f}) → {_target_city}"
-                    )
                 log.info(
                     f"MARITIME-APPROACH [{channel_name}]: current={_sea_label} "
                     f"({coords[0]:.3f},{coords[1]:.3f}) → target {_target_city} "
-                    f"({_tc[0]:.3f},{_tc[1]:.3f}) lane_wps={len(_sea_lane_wps) if _sea_lane_wps else 0}"
+                    f"({_tc[0]:.3f},{_tc[1]:.3f})"
                 )
 
         # Auto-promote: if origin is set + place_name resolved + no target_city,
@@ -2436,35 +2014,36 @@ async def _process_threat_message_content(
                                     f"→ target {_target_city} ({_tc[0]:.3f},{_tc[1]:.3f}) bearing={bearing_to_target:.1f}°"
                                 )
                         else:
-                            # Origin failed to geocode — fall back to target-offset
-                            log.info(
-                                f"TARGET-ONLY [{channel_name}]: origin '{_origin_raw}' did not geocode, "
-                                f"target={_target_city} — using predictive offset"
-                            )
-                            reverse_bearing = (bearing_to_target + 180) % 360
-                            _offset_km = 12.0
-                            offset_lat, offset_lng = _project_point(
-                                _tc[0], _tc[1], reverse_bearing, _offset_km
-                            )
-                            coords = (offset_lat, offset_lng)
-                            resolve_status = 'predictive_approach'
-                            log.info(
-                                f"EST-OFFSET (no origin): target={_target_city} "
-                                f"→ {_offset_km:.0f}km offset ({coords[0]:.3f},{coords[1]:.3f})"
-                            )
+                            if _is_uav_event(entities.event_type):
+                                coords = None
+                                resolve_status = 'target_only_no_current_position'
+                                confidence = min(max(confidence, 0.24), 0.32)
+                                log.info(
+                                    f"TARGET-ONLY [{channel_name}]: origin '{_origin_raw}' did not geocode, "
+                                    f"target={_target_city} — suppress UAV pin instead of target-offset"
+                                )
+                            else:
+                                # Origin failed to geocode — fall back to target-offset
+                                reverse_bearing = (bearing_to_target + 180) % 360
+                                _offset_km = 15.0 if _tc[0] >= 47.0 else 20.0
+                                offset_lat, offset_lng = _project_point(
+                                    _tc[0], _tc[1], reverse_bearing, _offset_km
+                                )
+                                coords = (offset_lat, offset_lng)
+                                resolve_status = 'estimated_offset'
+                                confidence = max(confidence, 0.6)
+                                log.info(
+                                    f"EST-OFFSET (no origin): target={_target_city} "
+                                    f"→ {_offset_km:.0f}km offset ({offset_lat:.3f},{offset_lng:.3f})"
+                                )
                     else:
                         if _is_uav_event(entities.event_type):
-                            reverse_bearing = (bearing_to_target + 180) % 360
-                            _offset_km = 12.0
-                            offset_lat, offset_lng = _project_point(
-                                _tc[0], _tc[1], reverse_bearing, _offset_km
-                            )
-                            coords = (offset_lat, offset_lng)
-                            resolve_status = 'predictive_approach'
-                            confidence = max(confidence, 0.6)
+                            coords = None
+                            resolve_status = 'target_only_no_current_position'
+                            confidence = min(max(confidence, 0.24), 0.32)
                             log.info(
-                                f"PREDICTIVE-APPROACH [{channel_name}]: UAV heading to {_target_city}, "
-                                f"placing 12km back along bearing {bearing_to_target:.1f}°"
+                                f"TARGET-ONLY [{channel_name}]: {_target_city} + bearing "
+                                f"{bearing_to_target:.1f}° but no current/origin point — suppress UAV pin"
                             )
                         else:
                             reverse_bearing = (bearing_to_target + 180) % 360
@@ -2638,65 +2217,6 @@ async def _process_threat_message_content(
         if ai_analysis and ai_analysis.get('count') and ai_analysis['count'] > entities.count:
             entities.count = ai_analysis['count']
 
-        # Destination-only reports ("БпЛА курсом на X") describe where the target is
-        # going, not where it is now. Place the marker along the flight path.
-        if _course_only_without_current and _target_city:
-            if not _target_coords:
-                _target_coords = _geocode_direction_target(_target_city, region)
-            _origin_coords = _resolve_approach_origin(
-                entities,
-                ai_analysis,
-                channel_name,
-                entities.event_type,
-                region,
-            )
-            if _origin_coords and _target_coords:
-                _route_km = _haversine_km(
-                    _origin_coords[0],
-                    _origin_coords[1],
-                    _target_coords[0],
-                    _target_coords[1],
-                )
-                if _route_km > 50:
-                    _elapsed = _chain_elapsed_seconds(_pre_dup_parent, now_kyiv) if _pre_dup_parent else None
-                    _approach_pos, _progress = _compute_flight_approach_pos(
-                        _origin_coords,
-                        _target_coords,
-                        entities.event_type,
-                        _elapsed,
-                    )
-                    coords = _approach_pos
-                    resolve_status = 'trajectory_approach'
-                    location = f"курс на {_target_city}"
-                    confidence = min(max(float(confidence), 0.60), 0.72)
-                    try:
-                        from geo.rules import find_oblast_for_coords
-                        _target_oblast = find_oblast_for_coords(_target_coords[0], _target_coords[1]) if _target_coords else None
-                        if _target_oblast and not _oblast_explicit_any:
-                            region = _target_oblast
-                        else:
-                            _approach_oblast = find_oblast_for_coords(coords[0], coords[1])
-                            if _approach_oblast and not _oblast_explicit_any:
-                                region = _approach_oblast
-                    except Exception:
-                        pass
-                    log.info(
-                        f"APPROACH_POS [{channel_name}]: {entities.event_type} "
-                        f"origin=({_origin_coords[0]:.3f},{_origin_coords[1]:.3f}) "
-                        f"→ target=({_target_coords[0]:.3f},{_target_coords[1]:.3f}) "
-                        f"progress={_progress:.0%} elapsed={_elapsed if _elapsed is not None else 'default'} "
-                        f"→ placed at ({coords[0]:.3f},{coords[1]:.3f})"
-                    )
-
-        # ── P5-B: Multi-oblast confidence boost ──────────────────────
-        if coords:
-            _mob_boost = _multi_oblast_confidence_boost(entities.event_type, region)
-            if _mob_boost > 0:
-                confidence = min(0.97, confidence + _mob_boost)
-                log.debug(f"P5-B multi-oblast boost +{_mob_boost:.2f} → conf={confidence:.2f}")
-            if resolve_status == 'trajectory_approach':
-                confidence = min(float(confidence), 0.72)
-
         # ── Build trajectory (direction → target coords) ──────────────
         trajectory_data = None
         course_bearing = None
@@ -2709,7 +2229,6 @@ async def _process_threat_message_content(
                 channel_name=channel_name,
                 ai_analysis=ai_analysis,
                 target_city_coords=_target_coords,
-                sea_lane_wps=_sea_lane_wps,  # P5-A
             )
             if trajectory_data:
                 end = trajectory_data['end']
@@ -2766,13 +2285,7 @@ async def _process_threat_message_content(
             _bearing_hint = float(ticker_bearing) % 360.0
 
         if coords:
-            _is_estimated = bool(
-                resolve_status
-                and (
-                    resolve_status.startswith('estimated_')
-                    or resolve_status in {'trajectory_approach', 'predictive_approach'}
-                )
-            )
+            _is_estimated = bool(resolve_status and resolve_status.startswith('estimated_'))
             agg_obs = AggObs(
                 lat=coords[0],
                 lng=coords[1],
@@ -2850,30 +2363,16 @@ async def _process_threat_message_content(
             'speed_kmh': round(speed_kmh, 1) if speed_kmh > 0 else None,
             'distance_km': distance_km,
             'origin': (ai_analysis or {}).get('origin') or getattr(entities, 'origin', None),
-            'sensor_type': getattr(entities, 'sensor_type', None),
             'positions': _target.to_positions_list(30) if _target else None,
             'observation_count': _target.observation_count if _target else 1,
             'flight_phase': (ai_analysis or {}).get('flight_phase', 'cruise') if trajectory_data else None,
-            'is_estimated': (
-                resolve_status.startswith('estimated_')
-                or resolve_status in {'trajectory_approach', 'predictive_approach'}
-            ) if resolve_status else False,
-            'position_estimated': (
-                resolve_status.startswith('estimated_')
-                or resolve_status in {'trajectory_approach', 'predictive_approach'}
-            ) if resolve_status else False,
+            'is_estimated': resolve_status.startswith('estimated_') if resolve_status else False,
             'confidence_0_100': int(max(0, min(100, round(float(confidence) * 100)))),
             'placement_mode': 'point',
             'analysis_source': (ai_analysis or {}).get('source'),
             'analysis_confidence': (ai_analysis or {}).get('confidence'),
             'analysis_target_city': (ai_analysis or {}).get('target_city'),
             'analysis_reason': resolve_status,
-            # P3-E: altitude inference from message text
-            'altitude_mode': _infer_altitude_mode(msg_text, entities.event_type if entities else ''),
-            # P5-E: trajectory confidence signal propagated from worker to tracker
-            'trajectory_confidence': _compute_trajectory_confidence(
-                resolve_status, confidence, trajectory_data, ai_analysis
-            ),
         }
 
         normalize_maritime_marker_fields(data)
@@ -2968,22 +2467,9 @@ async def _process_threat_message_content(
             if route_patch.get('trajectory') or route_patch.get('course_bearing') is not None:
                 try:
                     session = get_http_session()
-                    route_data = {
-                        **data,
-                        'id': threat_id,
-                        'track_id': getattr(parent, 'track_id', None),
-                        'lat': parent_coords[0],
-                        'lng': parent_coords[1],
-                        'location': parent.place,
-                        'place': parent.place,
-                        'region': region or parent.oblast,
-                        'text': msg_text,
-                        'event_kind': 'trajectory_update',
-                        **route_patch,
-                    }
-                    async with session.post(
+                    async with session.patch(
                         INGEST_URL,
-                        json=_ingest_payload_for_data(route_data),
+                        json={'id': parent.marker_id, 'updates': route_patch},
                         headers={'X-Auth-Secret': INGEST_SECRET},
                         timeout=aiohttp.ClientTimeout(total=10),
                     ) as resp:
@@ -3081,7 +2567,7 @@ async def _process_threat_message_content(
                         session = get_http_session()
                         async with session.post(
                             INGEST_URL,
-                            json=_ingest_payload_for_data(data),
+                            json={'marker': data},
                             headers={'X-Auth-Secret': INGEST_SECRET},
                             timeout=aiohttp.ClientTimeout(total=10),
                         ) as resp:
@@ -3138,7 +2624,7 @@ async def _process_threat_message_content(
                     )
                     continue  # Skip legacy POST/PATCH — all units updated
 
-            # Fallback: resend as candidate_event; do not mutate public markers directly.
+            # Fallback: legacy PATCH by marker ID
             patch_updates = {
                 'lat': coords[0],
                 'lng': coords[1],
@@ -3157,21 +2643,21 @@ async def _process_threat_message_content(
 
             if not is_plausible_threat_coord(coords[0], coords[1], manual=False):
                 log.warning(
-                    f"CHAIN POST fallback skipped: implausible coords lat={coords[0]} lng={coords[1]}"
+                    f"CHAIN PATCH skipped: implausible coords lat={coords[0]} lng={coords[1]}"
                 )
             else:
                 try:
                     session = get_http_session()
-                    async with session.post(
+                    async with session.patch(
                         INGEST_URL,
-                        json=_ingest_payload_for_data(data),
+                        json={'id': parent.marker_id, 'updates': patch_updates},
                         headers={'X-Auth-Secret': INGEST_SECRET},
                         timeout=aiohttp.ClientTimeout(total=10),
                     ) as resp:
                         body_text = await resp.text()
                         if resp.status == 200:
                             log.info(
-                                f"CHAIN POST FALLBACK [{channel_name}]: {parent.marker_id} → "
+                                f"CHAIN PATCH [{channel_name}]: {parent.marker_id} → "
                                 f"{location} ({entities.direction or 'no-dir'})"
                             )
                             _add_recent(data)
@@ -3206,11 +2692,11 @@ async def _process_threat_message_content(
                             )
                             continue
                         log.warning(
-                            f"CHAIN POST fallback failed [{resp.status}]: {body_text[:200]}. "
+                            f"CHAIN PATCH failed [{resp.status}]: {body_text[:200]}. "
                             f"Falling back to POST."
                         )
                 except Exception as e:
-                    log.warning(f"CHAIN POST fallback error: {e}. Falling back to main ingest.")
+                    log.warning(f"CHAIN PATCH error: {e}. Falling back to POST.")
 
         # ── Phantom avia marker for KAB/tactical aviation ──
         if entities.event_type == 'kab' and coords:
@@ -3234,7 +2720,7 @@ async def _process_threat_message_content(
                         session = get_http_session()
                         async with session.post(
                             INGEST_URL,
-                            json=_ingest_payload_for_data(avia_data),
+                            json={'marker': avia_data},
                             headers={'X-Auth-Secret': INGEST_SECRET},
                             timeout=aiohttp.ClientTimeout(total=10),
                         ) as resp:
@@ -3377,10 +2863,6 @@ async def _process_threat_message_content(
         elif (
             not _channels_skip_air_alarm_gate(channel_name)
             and not _is_maritime_alarm_gate_bypass(data, msg_text, location, resolve_status)
-            # trajectory_approach = verified en-route position; allow as early warning even
-            # before the official alarm catches up. predictive_approach (12 km offset) is
-            # NOT trusted without an alarm.
-            and resolve_status != 'trajectory_approach'
             and not _should_ingest_by_alarm(
                 region,
                 entities.event_type,
@@ -3413,7 +2895,7 @@ async def _process_threat_message_content(
                     session = get_http_session()
                     async with session.post(
                         INGEST_URL,
-                        json=_ingest_payload_for_data(data),
+                        json={'marker': data},
                         headers={'X-Auth-Secret': INGEST_SECRET},
                         timeout=_ingest_timeout,
                     ) as resp:
@@ -3519,7 +3001,7 @@ async def _process_threat_message_content(
                             )
                             continue
                         log.error(f"Ingest failed [{resp.status}]: {body_text[:300]}")
-                        ingest_queue.enqueue(_ingest_payload_for_data(data))
+                        ingest_queue.enqueue(data)
                         await _publish_feed_event(
                             status='error', channel_name=channel_name, msg_text=msg_text,
                             channel_id=channel_id, msg_id=msg_id,
@@ -3537,7 +3019,7 @@ async def _process_threat_message_content(
                     if not _is_last:
                         continue
                     log.error(f"Ingest gave up after {len(_ingest_delays_sec)} attempts: {_ing_e}")
-                    ingest_queue.enqueue(_ingest_payload_for_data(data))
+                    ingest_queue.enqueue(data)
                     await _publish_feed_event(
                         status='error', channel_name=channel_name, msg_text=msg_text,
                         channel_id=channel_id, msg_id=msg_id,
@@ -3548,7 +3030,7 @@ async def _process_threat_message_content(
                     _posted = True
                 except Exception as e:
                     log.error(f"Failed to POST to ingest: {e}", exc_info=True)
-                    ingest_queue.enqueue(_ingest_payload_for_data(data))
+                    ingest_queue.enqueue(data)
                     await _publish_feed_event(
                         status='error', channel_name=channel_name, msg_text=msg_text,
                         channel_id=channel_id, msg_id=msg_id,
@@ -3560,7 +3042,7 @@ async def _process_threat_message_content(
                     break
             if not _posted:
                 log.error('Ingest loop exited without handling response')
-                ingest_queue.enqueue(_ingest_payload_for_data(data))
+                ingest_queue.enqueue(data)
 
 
 def shutdown_handler(sig, frame):

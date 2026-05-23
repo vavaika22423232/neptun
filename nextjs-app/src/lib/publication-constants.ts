@@ -36,6 +36,9 @@ export const NON_PUBLIC_RESOLVE_STATUSES = new Set([
   'ambiguous_no_point',
   'target_only_no_current_position',
   'weak_target_only_no_point',
+  // Centroid placements from regional nickname recognition (e.g. "Кіровоградщина")
+  'regional_oblast_centroid',
+  'regional_oblast_direction_target',
 ]);
 
 /**

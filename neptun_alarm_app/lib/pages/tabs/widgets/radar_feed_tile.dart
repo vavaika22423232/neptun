@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../design/neptun_design.dart';
 import '../../../features/map/presentation/threat_detail_sheet.dart';
+import '../../../features/radar/domain/threat_track_meta.dart';
 import '../../../models/map_models.dart';
 import 'radar_feed_logic.dart';
 
@@ -45,6 +46,7 @@ class RadarFeedTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final iconColor = NeptunStatus.alarm.withValues(alpha: 0.95);
+    final meta = ThreatTrackMeta.fromMarker(entry.raw);
 
     return Material(
       color: Colors.transparent,
@@ -83,6 +85,29 @@ class RadarFeedTile extends StatelessWidget {
                         color: cs.onSurface.withValues(alpha: 0.55),
                       ),
                     ),
+                    if (meta.qualityPercent != null ||
+                        meta.hasWaveBadge ||
+                        meta.maneuverDetected ||
+                        meta.predictedEtaLabel != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          if (meta.qualityPercent != null)
+                            'довіра ${meta.qualityPercent}%',
+                          if (meta.hasWaveBadge) 'хвиля',
+                          if (meta.maneuverDetected) 'маневр',
+                          if (meta.predictedEtaLabel != null)
+                            meta.predictedEtaLabel,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: cs.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

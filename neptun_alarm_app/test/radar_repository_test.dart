@@ -32,6 +32,22 @@ void main() {
     });
   });
 
+  group('RadarRepository.normalizeThreatMarker', () {
+    test('maps V10 snake_case fields', () {
+      final out = RadarRepository.normalizeThreatMarker({
+        'id': 't1',
+        'trackQualityScore': 0.82,
+        'formationId': 'wave-7',
+        'maneuverDetected': true,
+        'predictedImpact': {'eta_minutes': 12},
+      });
+      expect(out['track_quality_score'], 0.82);
+      expect(out['formation_id'], 'wave-7');
+      expect(out['maneuver_detected'], isTrue);
+      expect(out['predicted_impact'], isA<Map>());
+    });
+  });
+
   group('RadarRepository.countActiveRegionsFromAlarmStream', () {
     test('counts rows with non-empty activeAlerts', () {
       final n = RadarRepository.countActiveRegionsFromAlarmStream([

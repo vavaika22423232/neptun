@@ -7,6 +7,8 @@ import {
 } from '@/lib/feedback-db';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
 import { sendPushToDevice } from '@/lib/fcm';
+import { FeedbackRespondSchema } from '@/lib/api-schemas';
+import { requireDeviceAuthFromJson } from '@/lib/device-auth';
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Відкрито',
@@ -17,40 +19,40 @@ const STATUS_LABELS: Record<string, string> = {
 
 /**
  * POST /api/feedback/[id]/respond
- * Add a response to a feedback ticket.
- * Admin: requires auth. User: requires matching device_id.
- * Body: { message: string, author?: 'admin'|'user', device_id?: string }
+ * Admin: session/secret. User: JWT must match ticket owner; author cannot be spoofed.
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { message, author, device_id } = body;
-
-    if (!message || typeof message !== 'string' || message.trim().length < 1) {
-      return NextResponse.json({ error: 'Missing message' }, { status: 400 });
+    const parsed = FeedbackRespondSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
     }
+
+    const { message, author } = parsed.data;
 
     const ticket = await getFeedback(id);
     if (!ticket) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const isAdmin = author === 'admin';
-    if (isAdmin) {
-      // Admin must be authenticated
+    const wantsAdmin = author === 'admin';
+    if (wantsAdmin) {
       const authErr = await requireAdminAuth();
       if (authErr) return authErr;
     } else {
-      // User must provide matching device_id
-      if (!device_id || device_id !== ticket.device_id) {
+      const auth = await requireDeviceAuthFromJson(request, body, 'device_id');
+      if (!auth.ok) return auth.response;
+      if (auth.deviceId !== ticket.device_id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
       }
     }
 
+    const isAdmin = wantsAdmin;
     const responseId = `resp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const now = new Date().toISOString();
 
@@ -63,7 +65,6 @@ export async function POST(
     };
     await addResponse(resp);
 
-    // Update ticket timestamp and reopen if resolved and user responded
     const newStatus = isAdmin
       ? ticket.status === 'open'
         ? 'in_progress'
@@ -73,9 +74,6 @@ export async function POST(
         : ticket.status;
     await updateFeedback(id, { updated_at: now, status: newStatus });
 
-    console.log(`[FEEDBACK] Response to ${id} from ${isAdmin ? 'admin' : 'user'}: ${message.slice(0, 80)}`);
-
-    // Send push notification to user when admin replies
     if (isAdmin && ticket.device_id) {
       const preview = message.trim().slice(0, 100);
       const statusChanged = newStatus !== ticket.status;
@@ -93,7 +91,7 @@ export async function POST(
           new_status: newStatus,
           click_action: 'FLUTTER_NOTIFICATION_CLICK',
         },
-      ).catch(err => console.error('[FEEDBACK] Push error:', err));
+      ).catch((err) => console.error('[FEEDBACK] Push error:', err));
     }
 
     return NextResponse.json({ status: 'ok', response_id: responseId });

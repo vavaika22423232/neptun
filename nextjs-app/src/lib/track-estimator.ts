@@ -159,13 +159,13 @@ export function estimateTrackState(marker: Record<string, unknown>, nowMs: numbe
   } else if (ageMs > profile.observedFreshMs) {
     state = ageMs <= profile.extrapolateMs && bearingDeg != null && speedKmh > 0 ? 'extrapolated' : 'stale';
     reason = state === 'extrapolated' ? 'motion_extrapolated' : 'no_motion_for_extrapolation';
+  }
 
-    // Terrain masking for low-altitude drones
-    if (state === 'stale' && (profile.nominalAltitudeMeters || 1000) <= 500) {
-      if (ageMs <= profile.extrapolateMs + 10 * 60_000) {
-        state = 'terrain_masking';
-        reason = 'terrain_masking_ttl';
-      }
+  // Terrain masking for low-altitude threats (UAVs, cruise missiles)
+  if (state === 'stale' && (profile.nominalAltitudeMeters || 1000) <= 500) {
+    if (ageMs <= profile.extrapolateMs + 10 * 60_000) {
+      state = 'terrain_masking';
+      reason = 'terrain_masking_ttl';
     }
   }
 

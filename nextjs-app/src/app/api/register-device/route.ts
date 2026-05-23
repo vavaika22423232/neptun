@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { RegisterDeviceSchema } from '@/lib/api-schemas';
+import { requireDeviceAuth } from '@/lib/device-auth';
+import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
+import { getClientIp, ipRedisTag } from '@/lib/client-ip';
+import { logSecurityEvent } from '@/lib/security-log';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
@@ -19,7 +22,6 @@ interface DeviceRegistration {
   updated_at: string;
 }
 
-// In-memory device index for fast lookups
 let _deviceMap: Map<string, number> | null = null;
 let _devices: DeviceRegistration[] | null = null;
 let _devicesLoaded = false;
@@ -32,7 +34,6 @@ async function loadDevices(): Promise<DeviceRegistration[]> {
   } catch {
     _devices = [];
   }
-  // Build index
   _deviceMap = new Map();
   _devices!.forEach((d, i) => _deviceMap!.set(d.device_id, i));
   _devicesLoaded = true;
@@ -47,12 +48,11 @@ async function saveDevices(devices: DeviceRegistration[]): Promise<void> {
   await fsp.rename(tmp, DEVICES_FILE);
 }
 
-// Debounce writes — batch rapid registrations
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-const SAVE_DEBOUNCE = 5_000; // flush to disk every 5s max
+const SAVE_DEBOUNCE = 5_000;
 
 function scheduleSave() {
-  if (_saveTimer) return; // already scheduled
+  if (_saveTimer) return;
   _saveTimer = setTimeout(async () => {
     _saveTimer = null;
     if (_devices) {
@@ -65,15 +65,31 @@ function scheduleSave() {
 /**
  * POST /api/register-device
  * Register or update FCM device token for push notifications.
+ * Requires JWT matching device_id in production.
  */
 export async function POST(request: Request) {
   try {
+    const ip = getClientIp(request);
+    const allowed = await redisFixedWindowAllow(
+      `rl:register-device:${ipRedisTag(ip)}`,
+      30,
+      3600,
+      false,
+    );
+    if (!allowed) {
+      logSecurityEvent('rate_limit_hit', { route: 'register_device' });
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
+
     const rawBody = await request.json();
     const parsed = RegisterDeviceSchema.safeParse(rawBody);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Invalid input' }, { status: 400 });
     }
     const { token, regions, oblast_ids, raion_ids, device_id, platform, enabled } = parsed.data;
+
+    const auth = requireDeviceAuth(request, device_id);
+    if (!auth.ok) return auth.response;
 
     const devices = await loadDevices();
     const idx = _deviceMap!.get(device_id);
@@ -96,18 +112,15 @@ export async function POST(request: Request) {
       _deviceMap!.set(device_id, devices.length - 1);
     }
 
-    // Trim to 10K in-memory
     if (devices.length > 10000) {
       _devices = devices.slice(-10000);
-      // Rebuild index
       _deviceMap = new Map();
       _devices.forEach((d, i) => _deviceMap!.set(d.device_id, i));
     }
 
-    // Debounced save (avoids full serialize on every registration)
     scheduleSave();
 
-    console.log(`[DEVICE] Registered ${device_id} (${platform}) — ${regions?.length || 0} regions`);
+    console.log(`[DEVICE] Registered device (${platform}) — ${regions?.length || 0} regions`);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     console.error('[DEVICE] Register error:', err);

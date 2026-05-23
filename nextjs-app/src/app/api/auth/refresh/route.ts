@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getJwtSecret } from '@/lib/server-secrets';
 import { resolveChatDisplayNickname } from '@/lib/chat-nicknames';
+import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
+import { getClientIp, ipRedisTag } from '@/lib/client-ip';
+import { logSecurityEvent } from '@/lib/security-log';
 
 const ACCESS_TTL = 3600;
 
@@ -32,6 +35,18 @@ function createToken(secret: string, payload: Record<string, unknown>, expiresIn
  */
 export async function POST(request: Request) {
   try {
+    const ip = getClientIp(request);
+    const allowed = await redisFixedWindowAllow(
+      `rl:auth:refresh:${ipRedisTag(ip)}`,
+      20,
+      3600,
+      false,
+    );
+    if (!allowed) {
+      logSecurityEvent('rate_limit_hit', { route: 'auth_refresh' });
+      return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    }
+
     const secret = getJwtSecret();
     if (!secret) {
       console.error('[AUTH] JWT_SECRET / AUTH_SECRET not configured');

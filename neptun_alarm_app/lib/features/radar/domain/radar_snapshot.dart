@@ -7,6 +7,7 @@ class RadarSnapshot {
     required this.markers,
     required this.activeOblastsUnderAlarm,
     required this.fetchedAt,
+    this.fromDiskCache = false,
   });
 
   /// Сирі маркери загроз із `GET /api/threats`.
@@ -16,4 +17,7 @@ class RadarSnapshot {
   final int activeOblastsUnderAlarm;
 
   final DateTime fetchedAt;
+
+  /// `true` якщо дані з локального кешу (мережа недоступна).
+  final bool fromDiskCache;
 }

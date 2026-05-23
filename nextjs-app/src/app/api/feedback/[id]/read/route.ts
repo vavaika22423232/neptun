@@ -1,26 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getFeedback, updateFeedback } from '@/lib/feedback-db';
+import { FeedbackDeviceActionSchema } from '@/lib/api-schemas';
+import { requireDeviceAuthFromJson } from '@/lib/device-auth';
 
 /**
  * POST /api/feedback/[id]/read
- * Mark a ticket as read by user (updates last_read_at).
- * Body: { device_id: string }
+ * Mark a ticket as read by owner (JWT must match ticket device_id).
  */
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { device_id } = body;
-
-    if (!device_id) {
-      return NextResponse.json({ error: 'Missing device_id' }, { status: 400 });
+    const parsed = FeedbackDeviceActionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'bad_device_id' }, { status: 400 });
     }
 
+    const auth = await requireDeviceAuthFromJson(request, body, 'device_id');
+    if (!auth.ok) return auth.response;
+
     const ticket = await getFeedback(id);
-    if (!ticket || ticket.device_id !== device_id) {
+    if (!ticket || ticket.device_id !== auth.deviceId) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 

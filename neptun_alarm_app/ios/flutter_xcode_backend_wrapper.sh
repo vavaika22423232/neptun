@@ -25,4 +25,24 @@ if [ "$(uname -s)" = "Darwin" ]; then
       ;;
   esac
 fi
-exec /bin/sh "${FLUTTER_ROOT}/packages/flutter_tools/bin/xcode_backend.sh" "$@"
+
+# Desktop/iCloud paths add com.apple.provenance → codesign fails with
+# "resource fork, Finder information, or similar detritus not allowed".
+strip_codesign_detritus() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    return 0
+  fi
+  if [ -z "${TARGET_BUILD_DIR:-}" ] || [ -z "${FULL_PRODUCT_NAME:-}" ]; then
+    return 0
+  fi
+  _APP="${TARGET_BUILD_DIR}/${FULL_PRODUCT_NAME}"
+  if [ -d "${_APP}" ]; then
+    xattr -cr "${_APP}" 2>/dev/null || true
+    dot_clean -m "${_APP}" 2>/dev/null || true
+  fi
+}
+
+/bin/sh "${FLUTTER_ROOT}/packages/flutter_tools/bin/xcode_backend.sh" "$@"
+if [ "${1:-}" = "embed_and_thin" ]; then
+  strip_codesign_detritus
+fi

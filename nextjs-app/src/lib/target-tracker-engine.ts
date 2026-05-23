@@ -453,6 +453,28 @@ function lifecycleFor(target: TrackedTarget, publication?: MarkerPublicationDeci
   return 'REJECTED';
 }
 
+/**
+ * V9 M7: Compute a 0–100 quality score for a tracked target.
+ * Higher = more trustworthy, better corroborated, higher confidence.
+ */
+function computeTrackQualityScore(target: TrackedTarget): number {
+  // Source count score: log2 curve, cap at 30
+  const sourcePts = Math.min(30, Math.round(Math.log2(Math.max(1, target.source_count)) * 10));
+  // Confidence score: 0–30
+  const confPts = Math.round(target.confidence * 30);
+  // Observation spread: unique channels / 3 × 20, cap at 20
+  const history = Array.isArray(target.history) ? target.history : [];
+  const uniqueChannels = new Set(history.filter((h) => h.accepted).map((h) => h.source).filter(Boolean)).size;
+  const spreadPts = Math.min(20, Math.round((uniqueChannels / 3) * 20));
+  // Channel tier score: use best (lowest) channel_priority; lower priority = better tier
+  const priorities = history
+    .filter((h) => h.accepted && typeof h.channel_priority === 'number')
+    .map((h) => h.channel_priority as number);
+  const bestPriority = priorities.length > 0 ? Math.min(...priorities) : 999;
+  const tierPts = bestPriority <= 10 ? 20 : bestPriority <= 50 ? 14 : bestPriority <= 200 ? 7 : 0;
+  return sourcePts + confPts + spreadPts + tierPts;
+}
+
 function lifecycleAt(target: TrackedTarget, nowMs: number): TargetLifecycleState {
   if (target.manual) return target.lifecycle_state;
   if (target.lifecycle_state === 'DESTROYED' || target.lifecycle_state === 'LOST' || target.lifecycle_state === 'REJECTED') {
@@ -641,6 +663,9 @@ function inferTextIntent(event: CandidateEvent): TextIntent {
 function observationQuality(event: CandidateEvent): ObservationQuality {
   const resolveStatus = eventResolveStatus(event);
   const placementMode = eventPlacementMode(event);
+  if (resolveStatus === 'maritime_approach') {
+    return 'observed';
+  }
   if (
     placementMode === 'target_only_no_current_position' ||
     resolveStatus === 'trajectory_approach' ||
@@ -663,8 +688,7 @@ function observationQuality(event: CandidateEvent): ObservationQuality {
     placementMode === 'fraction' ||
     resolveStatus === 'area_center' ||
     resolveStatus === 'regional_oblast_centroid' ||
-    resolveStatus === 'oblast_fallback' ||
-    resolveStatus === 'maritime_approach'
+    resolveStatus === 'oblast_fallback'
   ) {
     return 'coarse';
   }
@@ -1199,6 +1223,26 @@ export class TargetTrackerEngine {
       const acceptedObs = target.history.filter((h) => h.accepted).length;
       const densityBonus = Math.min(12, Math.log1p(acceptedObs) * 2.5);
 
+      // V9 M2: Temporal staleness penalty — old tracks are less attractive to associate with.
+      // Penalty grows exponentially: ~0 pts at 0 min, ~8 pts at 15 min, ~14 pts at 30 min.
+      const trackAgeMin = Math.max(0, (event.ts - target.last_seen) / 60_000);
+      const stalenessPenalty = Math.min(14, trackAgeMin > 10 ? (trackAgeMin - 10) * 0.5 : 0);
+
+      // V9 M2: Bearing coherence bonus — if the new observation is geometrically "ahead"
+      // of the track's direction of travel, reward it.
+      let bearingCoherenceBonus = 0;
+      if (
+        target.movement_vector.bearing_deg != null &&
+        target.speed_estimate_kmh != null &&
+        target.speed_estimate_kmh > 30 &&
+        dist > 2
+      ) {
+        const toEventBearing = bearingBetween(target.lat, target.lng, event.lat, event.lng) ?? 0;
+        const delta = angularDiffDeg(target.movement_vector.bearing_deg, toEventBearing);
+        // Bonus up to +8 if event is directly ahead (delta=0), neutral at 90°, slight penalty behind (>90°)
+        bearingCoherenceBonus = Math.round(8 * Math.cos((delta * Math.PI) / 180));
+      }
+
       const score = 100
         - (dist / radiusKm) * 65
         + (samePlace ? 12 : 0)
@@ -1206,11 +1250,13 @@ export class TargetTrackerEngine {
         + (sameUpstreamTrack ? 25 : 0)
         + densityBonus
         + groupBonus
+        + bearingCoherenceBonus
         - countPenalty
         - bearingPenalty
         - corridorPenalty
         - innovationPenalty
-        - qualityPenalty;
+        - qualityPenalty
+        - stalenessPenalty;
       
       const threshold = associationScoreThreshold(target, event, !!samePlace);
       const breakdown: TargetAssociationBreakdown = {
@@ -1533,6 +1579,37 @@ export class TargetTrackerEngine {
     target.region = event.region || target.region;
     target.last_seen = event.ts;
     target.sources = Array.from(sources).sort();
+
+    // V9 M8: Bearing-change maneuver detection at observation level
+    // If the bearing shifted > 40° between prev and new (outside EKF), flag as maneuvering.
+    if (
+      !holdPosition &&
+      target.movement_vector.bearing_deg != null &&
+      bearing != null &&
+      target.speed_estimate_kmh != null &&
+      target.speed_estimate_kmh > 30
+    ) {
+      const bearingShift = angularDiffDeg(target.movement_vector.bearing_deg, bearing);
+      if (bearingShift > 40) {
+        target.maneuver_detected = true;
+        // Widen EKF process noise briefly to track the turn better
+        if (target.ekf && 'qProcessNoise' in target.ekf) {
+          (target.ekf as KalmanFilter2D).qProcessNoise = Math.min(
+            (target.ekf as KalmanFilter2D).qProcessNoise * 2.5,
+            0.05,
+          );
+        }
+      } else if (bearingShift < 15) {
+        // Stable flight — clear maneuver flag and tighten process noise
+        target.maneuver_detected = false;
+        if (target.ekf && 'qProcessNoise' in target.ekf) {
+          (target.ekf as KalmanFilter2D).qProcessNoise = Math.max(
+            (target.ekf as KalmanFilter2D).qProcessNoise * 0.85,
+            1e-5,
+          );
+        }
+      }
+    }
     target.source_count = target.sources.length;
     target.reliability = Math.max(target.reliability, sourceReliability(event));
     target.confidence = clamp01(Math.max(target.confidence, confidence) + Math.min(0.12, target.source_count * 0.025));
@@ -2134,11 +2211,33 @@ export class TargetTrackerEngine {
         }
         const seed = cluster[0]!;
         const fid = seed.formation_id || `formation_${seed.threat_type}_${(seed.first_seen / 1000).toFixed(0)}`;
-        for (const t of cluster) t.formation_id = fid;
+        for (const t of cluster) {
+          t.formation_id = fid;
+          // V9 M4: Wave confidence boost — being part of a confirmed wave lifts each member
+          const confirmedInCluster = cluster.filter(
+            (m) => m.lifecycle_state === 'CONFIRMED' || m.lifecycle_state === 'TRACKING',
+          ).length;
+          if (confirmedInCluster >= 3 && t.confidence < 0.97) {
+            t.confidence = Math.min(0.97, t.confidence + 0.12);
+          }
+        }
         formationsDetected++;
       }
     }
     return formationsDetected;
+  }
+
+  /**
+   * V9 M4: Compute wave bearing (median bearing of formation members).
+   * Returns median bearing in degrees or null.
+   */
+  private computeFormationWaveBearing(members: TrackedTarget[]): number | null {
+    const bearings = members
+      .map((t) => t.movement_vector.bearing_deg)
+      .filter((b): b is number => b != null);
+    if (bearings.length === 0) return null;
+    bearings.sort((a, b) => a - b);
+    return bearings[Math.floor(bearings.length / 2)] ?? null;
   }
 
   /**
@@ -2385,13 +2484,43 @@ export class TargetTrackerEngine {
 
       if (lc === 'LOST' || lc === 'STALE') {
         const ageMs = nowMs - target.last_seen;
-        if (ageMs > profile.lostMs * 2) {
+        // V9: hard-cap — always remove after 4 hours regardless of profile
+        const hardCapMs = 4 * 60 * 60_000;
+        if (ageMs > Math.min(profile.lostMs * 2, hardCapMs)) {
           this.targets.delete(id);
           reaped++;
         }
       }
     }
     return reaped;
+  }
+
+  /**
+   * V9 M7: Ghost track prevention.
+   * Removes low-quality single-source tracks that have stagnated without new observations.
+   * Returns count of tracks pruned.
+   */
+  pruneGhostTracks(nowMs = Date.now()): number {
+    let pruned = 0;
+    for (const [id, target] of this.targets.entries()) {
+      if (target.manual) continue;
+      const lc = target.lifecycle_state;
+      if (lc === 'CONFIRMED' || lc === 'DESTROYED' || lc === 'REJECTED') continue;
+      const ageMs = nowMs - target.last_seen;
+      const qualityScore = computeTrackQualityScore(target);
+      // Low-quality single-source track that hasn't been updated in 8+ minutes → prune
+      if (qualityScore < 15 && ageMs > 8 * 60_000 && target.source_count <= 1) {
+        target.lifecycle_state = 'LOST';
+        pruned++;
+        continue;
+      }
+      // Very old DETECTED tracks with no corroboration → prune
+      if (lc === 'DETECTED' && ageMs > 12 * 60_000 && target.source_count <= 1 && target.confidence < 0.5) {
+        target.lifecycle_state = 'LOST';
+        pruned++;
+      }
+    }
+    return pruned;
   }
 
   // ── P5-C: Launch origin inference via backward projection ───────────────────

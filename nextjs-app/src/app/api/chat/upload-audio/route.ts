@@ -7,6 +7,7 @@ import { broadcastSSE } from '@/lib/chat-sse-stream';
 import { invalidateChatCache } from '../messages/route';
 import { isBanned, isModeratorDevice } from '@/lib/admin/data';
 import { requireChatAuth } from '@/lib/chat-auth';
+import { resolveEntitlementsForDevice } from '@/lib/monetization/entitlement-store';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const AUDIO_DIR = path.join(DATA_DIR, 'audio');
@@ -56,7 +57,8 @@ export async function POST(request: Request) {
     const nickname = identity.nickname;
     const hardwareId = formData.get('hardwareId')?.toString() || formData.get('hardware_id')?.toString();
     const duration = parseInt(formData.get('duration')?.toString() || '0', 10);
-    const isPro = formData.get('isPro')?.toString() === 'true';
+    const entitlements = await resolveEntitlementsForDevice(deviceId);
+    const isPro = entitlements.isPro;
     const audioFile = formData.get('audio') as File | null;
 
     if (!audioFile) {

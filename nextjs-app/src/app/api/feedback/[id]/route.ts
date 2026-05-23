@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getFeedback, updateFeedback, getResponses, parseFeedbackRegions } from '@/lib/feedback-db';
 import { requireAdminAuth } from '@/lib/admin/apiAuth';
+import { requireDeviceAuth } from '@/lib/device-auth';
 import { sendPushToDevice } from '@/lib/fcm';
+import { logSecurityEvent } from '@/lib/security-log';
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Відкрито',
@@ -12,10 +14,10 @@ const STATUS_LABELS: Record<string, string> = {
 
 /**
  * GET /api/feedback/[id]
- * Get a single feedback ticket with all responses.
+ * Owner (JWT + device_id) or admin only.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -24,6 +26,18 @@ export async function GET(
     const ticket = await getFeedback(id);
     if (!ticket) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const adminResult = await requireAdminAuth();
+    const isAdmin = adminResult === null;
+
+    if (!isAdmin) {
+      if (!ticket.device_id) {
+        logSecurityEvent('feedback_access_denied', { reason: 'anonymous_ticket' });
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      const auth = requireDeviceAuth(request, ticket.device_id);
+      if (!auth.ok) return auth.response;
     }
 
     const responses = await getResponses(id);
@@ -44,7 +58,6 @@ export async function GET(
 /**
  * PATCH /api/feedback/[id]
  * Update feedback ticket status (admin only).
- * Body: { status?: 'open'|'in_progress'|'resolved'|'closed' }
  */
 export async function PATCH(
   request: Request,
@@ -72,7 +85,6 @@ export async function PATCH(
       const oldStatus = ticket.status;
       await updateFeedback(id, { status, updated_at: new Date().toISOString() });
 
-      // Send push notification when status changes
       const deviceId = ticket.device_id;
       if (deviceId && status !== oldStatus) {
         const label = STATUS_LABELS[status] || status;

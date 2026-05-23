@@ -55,11 +55,10 @@ class AppShellState extends ConsumerState<AppShell> {
   int _logoTapCount = 0;
   DateTime? _lastLogoTap;
 
-  static const _tabTitles = ['Карта', 'Радар', 'Регіони', 'Чат', 'Профіль'];
+  static const _tabTitles = ['Карта', 'Радар', 'Чат', 'Профіль'];
   static const _tabIcons = [
     Icons.map_rounded,
     Icons.radar_rounded,
-    Icons.location_on_rounded,
     Icons.chat_bubble_rounded,
     Icons.person_rounded,
   ];

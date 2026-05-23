@@ -1,26 +1,27 @@
 import { NextResponse } from 'next/server';
 import { isModeratorDevice } from '@/lib/admin/data';
 import { listChatBans } from '@/lib/chat-ban-service';
+import { requireModeratorAuth } from '@/lib/moderator-auth';
 
 /**
- * GET /api/chat/ban-list?deviceId=xxx
- * Get list of banned users with details (moderator action).
- * Requires moderator deviceId as query param.
+ * GET /api/chat/ban-list?q=
+ * Moderator or admin only (JWT moderator device or admin session).
  */
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const deviceId = searchParams.get('deviceId') || '';
-  const query = searchParams.get('q') || '';
+  const mod = await requireModeratorAuth(request);
+  if (!mod.ok) return mod.response;
 
-  // Auth: only moderators can view ban list
-  if (!deviceId || !isModeratorDevice(deviceId)) {
-    return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
-  }
+  const { searchParams } = new URL(request.url);
+  const query = searchParams.get('q') || '';
 
   const bans = listChatBans(undefined, query);
   return NextResponse.json({
     banned: bans.map((b) => b.nickname),
-    details: bans,
+    details: bans.map((b) => ({
+      nickname: b.nickname,
+      reason: b.reason,
+      banned_at: b.banned_at,
+    })),
     query,
   });
 }

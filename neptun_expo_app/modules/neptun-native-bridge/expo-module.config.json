@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["NeptunNativeBridgeModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.neptunnativebridge.NeptunNativeBridgeModule"]
+  }
+}

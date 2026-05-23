@@ -87,6 +87,48 @@ function getFcmTokenForDevice(deviceId: string): string | null {
  * Send a push notification to a specific device by device_id.
  * Returns true if sent successfully.
  */
+export type GatedPushOptions = {
+  regionId?: string;
+  threatType?: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  isCritical?: boolean;
+  dedupeKey?: string;
+  skipGate?: boolean;
+};
+
+/**
+ * Send push only if monetization rules allow (PRO smart notifications, quiet mode, dedupe).
+ * Critical alerts with criticalOverride still deliver during quiet hours when configured.
+ */
+export async function sendPushToDeviceGated(
+  deviceId: string,
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+  opts?: GatedPushOptions,
+): Promise<boolean> {
+  if (!opts?.skipGate) {
+    try {
+      const { shouldDeliverPush } = await import('@/lib/monetization/push-notification-gate');
+      const gate = await shouldDeliverPush({
+        deviceId,
+        regionId: opts?.regionId,
+        threatType: opts?.threatType,
+        severity: opts?.severity,
+        isCritical: opts?.isCritical,
+        dedupeKey: opts?.dedupeKey ?? `${opts?.regionId ?? 'all'}:${opts?.threatType ?? 'general'}`,
+      });
+      if (!gate.allow) {
+        console.log(`[FCM] Push suppressed for ${deviceId.slice(0, 8)}: ${gate.reason}`);
+        return false;
+      }
+    } catch (err) {
+      console.warn('[FCM] Push gate check failed — sending anyway:', err);
+    }
+  }
+  return sendPushToDevice(deviceId, title, body, data);
+}
+
 export async function sendPushToDevice(
   deviceId: string,
   title: string,

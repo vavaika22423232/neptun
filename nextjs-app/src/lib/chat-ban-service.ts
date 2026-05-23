@@ -21,6 +21,7 @@ interface ChatBanDependencies {
   getHardwareIdForNickname: (nickname: string) => string | undefined;
   getNicknameForDevice: (deviceId: string) => string | null;
   getRecentDeviceForNickname: (nickname: string) => string | undefined;
+  collectDevicesForNickname: (nickname: string) => string[];
 }
 
 const defaultDependencies: ChatBanDependencies = {
@@ -31,6 +32,7 @@ const defaultDependencies: ChatBanDependencies = {
   getHardwareIdForNickname,
   getNicknameForDevice,
   getRecentDeviceForNickname,
+  collectDevicesForNickname,
 };
 
 export interface BanChatUserInput {
@@ -66,35 +68,51 @@ function sameText(a: string | null | undefined, b: string | null | undefined): b
   return !!left && !!right && left === right;
 }
 
-export function getRecentDeviceForNickname(nickname: string): string | undefined {
-  const target = normalize(nickname).toLowerCase();
-  if (!target) return undefined;
-
+function readChatMessageRecords(): Record<string, unknown>[] {
   for (const filePath of [CHAT_MESSAGES_FILE, FALLBACK_CHAT_MESSAGES_FILE]) {
     try {
       if (!fs.existsSync(filePath)) continue;
       const raw = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw) as unknown;
-      const messages = Array.isArray(parsed)
-        ? parsed
-        : parsed && typeof parsed === 'object' && Array.isArray((parsed as { messages?: unknown }).messages)
-          ? (parsed as { messages: unknown[] }).messages
-          : [];
-
-      for (let i = messages.length - 1; i >= 0; i -= 1) {
-        const msg = messages[i];
-        if (!msg || typeof msg !== 'object') continue;
-        const rec = msg as Record<string, unknown>;
-        const msgNickname = normalize(String(rec.userId ?? rec.nickname ?? ''));
-        if (msgNickname.toLowerCase() !== target) continue;
-        const deviceId = normalize(String(rec.deviceId ?? rec.device_id ?? ''));
-        if (deviceId) return deviceId;
+      if (Array.isArray(parsed)) return parsed as Record<string, unknown>[];
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as { messages?: unknown }).messages)
+      ) {
+        return (parsed as { messages: Record<string, unknown>[] }).messages;
       }
     } catch {
       /* try next file */
     }
   }
-  return undefined;
+  return [];
+}
+
+/** All device_ids that posted under this display nickname (newest first). */
+export function collectDevicesForNickname(nickname: string): string[] {
+  const target = normalize(nickname).toLowerCase();
+  if (!target) return [];
+
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  const messages = readChatMessageRecords();
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const rec = messages[i];
+    if (!rec || typeof rec !== 'object') continue;
+    const msgNickname = normalize(String(rec.userId ?? rec.nickname ?? '')).toLowerCase();
+    if (msgNickname !== target) continue;
+    const deviceId = normalize(String(rec.deviceId ?? rec.device_id ?? ''));
+    if (!deviceId || seen.has(deviceId)) continue;
+    seen.add(deviceId);
+    ordered.push(deviceId);
+  }
+  return ordered;
+}
+
+export function getRecentDeviceForNickname(nickname: string): string | undefined {
+  return collectDevicesForNickname(nickname)[0];
 }
 
 function findExistingBanIndex(
@@ -104,11 +122,67 @@ function findExistingBanIndex(
   hardwareId?: string,
 ): number {
   return bans.findIndex((ban) => {
-    const nickMatch = sameText(ban.nickname, nickname);
-    const deviceMatch = !!targetDeviceId && ban.device_id === targetDeviceId;
-    const hardwareMatch = !!hardwareId && ban.hardware_id === hardwareId;
-    return nickMatch || deviceMatch || hardwareMatch;
+    if (hardwareId && ban.hardware_id === hardwareId) return true;
+    if (targetDeviceId && ban.device_id === targetDeviceId) return true;
+    // Upgrade legacy nickname-only row when we now know the device_id.
+    if (targetDeviceId && !ban.device_id && sameText(ban.nickname, nickname)) return true;
+    // Nickname-only rows (legacy) — do not collapse different devices under one nick.
+    if (!targetDeviceId && !ban.device_id && sameText(ban.nickname, nickname)) return true;
+    return false;
   });
+}
+
+function upsertBanEntry(
+  bans: BanEntry[],
+  input: {
+    nickname: string;
+    deviceId: string;
+    hardwareId?: string;
+    reason: string;
+    bannedBy: string;
+  },
+): { status: 'created' | 'updated' | 'already_banned'; entry: BanEntry } {
+  const existingIndex = findExistingBanIndex(
+    bans,
+    input.nickname,
+    input.deviceId,
+    input.hardwareId,
+  );
+
+  if (existingIndex >= 0) {
+    const existing = bans[existingIndex];
+    let enriched = false;
+    if (input.deviceId && !existing.device_id) {
+      existing.device_id = input.deviceId;
+      enriched = true;
+    }
+    if (
+      input.nickname &&
+      isDangerousPlaceholderBanEntry(existing.nickname, existing.device_id, existing.hardware_id)
+    ) {
+      existing.nickname = input.nickname;
+      enriched = true;
+    }
+    if (input.hardwareId && !existing.hardware_id) {
+      existing.hardware_id = input.hardwareId;
+      enriched = true;
+    }
+    return {
+      status: enriched ? 'updated' : 'already_banned',
+      entry: existing,
+    };
+  }
+
+  const entry: BanEntry = {
+    device_id: input.deviceId,
+    nickname: input.nickname,
+    reason: input.reason,
+    banned_at: new Date().toISOString(),
+    banned_by: input.bannedBy,
+    ...(input.hardwareId && { hardware_id: input.hardwareId }),
+  };
+  bans.push(entry);
+  return { status: 'created', entry };
 }
 
 export function banChatUser(
@@ -125,8 +199,12 @@ export function banChatUser(
   const targetFromRegistry = nickname
     ? deps.loadNicknames().find((entry) => entry.nickname.toLowerCase() === nickname.toLowerCase())
     : undefined;
-  const targetFromRecentMessage = nickname ? deps.getRecentDeviceForNickname(nickname) : undefined;
-  const resolvedTargetDevice = requestedTargetDevice || targetFromRegistry?.device_id || targetFromRecentMessage || '';
+  const devicesFromChat = nickname ? deps.collectDevicesForNickname(nickname) : [];
+  const resolvedTargetDevice =
+    requestedTargetDevice ||
+    targetFromRegistry?.device_id ||
+    devicesFromChat[0] ||
+    '';
   const hardwareId =
     (resolvedTargetDevice && deps.getHardwareIdForDevice(resolvedTargetDevice)) ||
     (nickname && deps.getHardwareIdForNickname(nickname)) ||
@@ -135,40 +213,7 @@ export function banChatUser(
     nickname ||
     (resolvedTargetDevice ? deps.getNicknameForDevice(resolvedTargetDevice) : null) ||
     'Анонім';
-
-  const bans = deps.loadBans();
-  const existingIndex = findExistingBanIndex(
-    bans,
-    nickname,
-    resolvedTargetDevice,
-    hardwareId,
-  );
-
-  if (existingIndex >= 0) {
-    const existing = bans[existingIndex];
-    let enriched = false;
-    if (resolvedTargetDevice && !existing.device_id) {
-      existing.device_id = resolvedTargetDevice;
-      enriched = true;
-    }
-    if (displayNickname && isDangerousPlaceholderBanEntry(existing.nickname, existing.device_id, existing.hardware_id)) {
-      existing.nickname = displayNickname;
-      enriched = true;
-    }
-    if (hardwareId && !existing.hardware_id) {
-      existing.hardware_id = hardwareId;
-      enriched = true;
-    }
-    if (enriched) {
-      deps.saveBans(bans);
-    }
-    return {
-      status: enriched ? 'updated' : 'already_banned',
-      entry: existing,
-      resolvedTargetDevice,
-      hardwareId,
-    };
-  }
+  const reason = normalize(input.reason) || input.defaultReason;
 
   if (isDangerousPlaceholderBanEntry(displayNickname, resolvedTargetDevice, hardwareId)) {
     throw new ChatBanRejected(
@@ -176,23 +221,58 @@ export function banChatUser(
     );
   }
 
-  const entry: BanEntry = {
-    device_id: resolvedTargetDevice,
-    nickname: displayNickname,
-    reason: normalize(input.reason) || input.defaultReason,
-    banned_at: new Date().toISOString(),
-    banned_by: input.bannedBy,
-    ...(hardwareId && { hardware_id: hardwareId }),
-  };
+  const deviceIdsToBan = new Set<string>();
+  if (resolvedTargetDevice) deviceIdsToBan.add(resolvedTargetDevice);
+  for (const id of devicesFromChat) deviceIdsToBan.add(id);
 
-  bans.push(entry);
+  if (deviceIdsToBan.size === 0 && !hardwareId) {
+    if (isDangerousPlaceholderBanEntry(displayNickname, '', undefined)) {
+      throw new ChatBanRejected(
+        'Неможливо забанити загальний нік «Анонім» без прив\'язки до пристрою — це заблокує всіх гостей чату.',
+      );
+    }
+    deviceIdsToBan.add('');
+  }
+
+  const bans = deps.loadBans();
+  let primary: BanEntry | null = null;
+  let primaryDevice = resolvedTargetDevice;
+  let overallStatus: BanChatUserResult['status'] = 'already_banned';
+
+  for (const deviceId of deviceIdsToBan) {
+    const hw =
+      (deviceId && deps.getHardwareIdForDevice(deviceId)) ||
+      (deviceId === resolvedTargetDevice ? hardwareId : undefined);
+    const nick =
+      deviceId && deps.getNicknameForDevice(deviceId)
+        ? deps.getNicknameForDevice(deviceId)!
+        : displayNickname;
+    const result = upsertBanEntry(bans, {
+      nickname: nick,
+      deviceId,
+      hardwareId: hw,
+      reason,
+      bannedBy: input.bannedBy,
+    });
+    if (!primary) {
+      primary = result.entry;
+      primaryDevice = deviceId;
+      overallStatus = result.status;
+    } else if (result.status === 'created') {
+      overallStatus = 'created';
+    } else if (result.status === 'updated' && overallStatus === 'already_banned') {
+      overallStatus = 'updated';
+    }
+  }
+
   deps.saveBans(bans);
 
   return {
-    status: 'created',
-    entry,
-    resolvedTargetDevice,
-    hardwareId,
+    status: overallStatus,
+    entry: primary!,
+    resolvedTargetDevice: primaryDevice,
+    hardwareId:
+      (primaryDevice && deps.getHardwareIdForDevice(primaryDevice)) || hardwareId,
   };
 }
 

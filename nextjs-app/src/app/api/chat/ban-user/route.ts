@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
-import { isModeratorDevice } from '@/lib/admin/data';
 import { ChatModeratorBanUserSchema } from '@/lib/api-schemas';
 import { banChatUser, ChatBanRejected } from '@/lib/chat-ban-service';
+import { requireModeratorAuth } from '@/lib/moderator-auth';
 
 /**
  * POST /api/chat/ban-user
- * Ban a user from chat (moderator action).
- * Body: { nickname?, deviceId: moderatorDeviceId, targetDeviceId?, reason? }
- * — deviceId is the moderator's device (must be in chat_moderators.json).
- * — targetDeviceId is the offender's device when known (e.g. from chat message); required for reliable ban if nickname is not in chat_nicknames.json.
+ * Ban a user from chat (moderator or admin only).
  */
 export async function POST(request: Request) {
   try {
+    const mod = await requireModeratorAuth(request);
+    if (!mod.ok) return mod.response;
+
     const parsed = ChatModeratorBanUserSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -19,28 +19,21 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const {
-      nickname,
-      deviceId: modDeviceId,
-      targetDeviceId,
-      reason,
-    } = parsed.data;
+    const { nickname, targetDeviceId, reason } = parsed.data;
 
-    if (!modDeviceId || !isModeratorDevice(modDeviceId)) {
-      return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
-    }
+    const bannedBy = mod.via === 'admin' ? 'admin-app' : mod.identity.deviceId;
 
     const result = banChatUser({
       nickname,
       targetDeviceId,
       reason,
-      bannedBy: modDeviceId,
+      bannedBy,
       defaultReason: 'Порушення правил',
     });
 
     if (result.status !== 'created') {
       if (result.status === 'updated') {
-        console.log(`[CHAT] Ban enriched: ${result.entry.nickname} (device: ${result.entry.device_id})`);
+        console.log(`[CHAT] Ban enriched: ${result.entry.nickname}`);
       }
       return NextResponse.json({
         status: 'ok',
@@ -48,9 +41,7 @@ export async function POST(request: Request) {
       });
     }
 
-    console.log(
-      `[CHAT] Banned: ${result.entry.nickname} (device: ${result.resolvedTargetDevice}) by ${modDeviceId}`,
-    );
+    console.log(`[CHAT] User banned by ${mod.via}`);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     if (err instanceof ChatBanRejected) {

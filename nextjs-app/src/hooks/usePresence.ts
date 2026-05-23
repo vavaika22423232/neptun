@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { PRESENCE_INTERVAL, PRESENCE_DISPLAY_POLL_MS } from '@/lib/constants';
+import {
+  PRESENCE_INTERVAL,
+  PRESENCE_BACKGROUND_INTERVAL,
+  PRESENCE_DISPLAY_POLL_MS,
+} from '@/lib/constants';
 import type { PresenceData } from '@/types';
 
 function getUserId(): string {
@@ -18,11 +22,26 @@ function getUserId(): string {
   return userId;
 }
 
+function isEmbedPresencePage(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.classList.contains('embed-mode');
+}
+
+/** Інтервал heartbeat: вкладка у фоні пінгує рідше, але не зникає з «онлайн». */
+function presenceHeartbeatDelayMs(): number {
+  if (isEmbedPresencePage()) return PRESENCE_INTERVAL;
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return PRESENCE_BACKGROUND_INTERVAL;
+  }
+  return PRESENCE_INTERVAL;
+}
+
 export function usePresence() {
   const [presence, setPresence] = useState<PresenceData>({ web: 0, apps: 0, total: -1 });
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const displayPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatTimerRef = useRef<number | null>(null);
+  const displayPollRef = useRef<number | null>(null);
   const failCountRef = useRef(0);
+  const pingPresenceRef = useRef<() => Promise<void>>(async () => {});
 
   const applyPresencePayload = useCallback((data: Record<string, unknown>) => {
     setPresence({
@@ -32,10 +51,8 @@ export function usePresence() {
     });
   }, []);
 
-  /** Рідкий POST — залишаємо користувача в sorted set. */
+  /** POST — оновлює score у Redis (користувач лишається в сесії). */
   const pingPresence = useCallback(async () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-
     try {
       const userId = getUserId();
       if (!userId) return;
@@ -48,6 +65,7 @@ export function usePresence() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: userId, platform: 'web', nickname: '' }),
         signal: controller.signal,
+        keepalive: true,
       });
       clearTimeout(timeout);
 
@@ -67,16 +85,17 @@ export function usePresence() {
     }
   }, [applyPresencePayload]);
 
-  /** Частий GET — лише оновлення числа в інтерфейсі без чергового ZADD. */
-  const pollPresenceDisplay = useCallback(async () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  pingPresenceRef.current = pingPresence;
 
+  /** GET — лише оновлення числа в HUD (працює і у фоновій вкладці). */
+  const pollPresenceDisplay = useCallback(async () => {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
       const response = await fetch('/api/presence', {
         method: 'GET',
         signal: controller.signal,
+        cache: 'no-store',
       });
       clearTimeout(timeout);
       if (response.ok) {
@@ -85,24 +104,67 @@ export function usePresence() {
         applyPresencePayload(data);
       }
     } catch {
-      /* не чіпаємо failCount — heartbeat відповідає за «офлайн» індикатор */
+      /* heartbeat відповідає за «офлайн» індикатор */
     }
   }, [applyPresencePayload]);
 
   useEffect(() => {
-    void pingPresence();
+    if (typeof window === 'undefined') return;
+
+    const clearHeartbeat = () => {
+      if (heartbeatTimerRef.current != null) {
+        window.clearTimeout(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
+    };
+
+    const scheduleHeartbeat = () => {
+      clearHeartbeat();
+      heartbeatTimerRef.current = window.setTimeout(() => {
+        void pingPresenceRef.current().finally(scheduleHeartbeat);
+      }, presenceHeartbeatDelayMs());
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void pingPresenceRef.current();
+      }
+      scheduleHeartbeat();
+    };
+
+    const onPageHide = () => {
+      const userId = getUserId();
+      if (!userId || typeof navigator.sendBeacon !== 'function') return;
+      try {
+        const body = JSON.stringify({ id: userId, platform: 'web', nickname: '' });
+        const blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon('/api/presence', blob);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void pingPresenceRef.current();
+    scheduleHeartbeat();
     void pollPresenceDisplay();
-    heartbeatRef.current = setInterval(() => {
-      void pingPresence();
-    }, PRESENCE_INTERVAL);
-    displayPollRef.current = setInterval(() => {
+
+    displayPollRef.current = window.setInterval(() => {
       void pollPresenceDisplay();
     }, PRESENCE_DISPLAY_POLL_MS);
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+
     return () => {
-      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-      if (displayPollRef.current) clearInterval(displayPollRef.current);
+      clearHeartbeat();
+      if (displayPollRef.current != null) {
+        window.clearInterval(displayPollRef.current);
+        displayPollRef.current = null;
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
     };
-  }, [pingPresence, pollPresenceDisplay]);
+  }, [pollPresenceDisplay]);
 
   return presence;
 }

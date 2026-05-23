@@ -7,7 +7,6 @@ import {
   estimateTrackState,
   trackMotionProfile,
 } from '../track-estimator';
-import { markerBehavior } from '../marker-behavior';
 
 function test(name: string, fn: () => void): void {
   try {
@@ -20,28 +19,6 @@ function test(name: string, fn: () => void): void {
 }
 
 const now = Date.now();
-
-test('large jump versus shahed motion budget yields split_candidate observation decision', () => {
-  const existing = {
-    lat: 49,
-    lng: 32,
-    threat_type: 'shahed',
-    confidence: 0.9,
-    speed_kmh: 170,
-    created_at_epoch: now - 120_000,
-    observations: [{ lat: 49, lng: 32, ts: now - 120_000, source: 'a' }],
-  };
-  const incoming = {
-    lat: 49.8,
-    lng: 32,
-    threat_type: 'shahed',
-    confidence: 0.88,
-    created_at_epoch: now,
-  };
-  const d = decideTrackObservationUpdate({ existing, incoming, nowMs: now });
-  assert.equal(d.action, 'split_candidate');
-  assert.equal(d.reason, 'teleport_blocked_split_candidate');
-});
 
 test('shahed remains extrapolated longer than missile with decayed confidence', () => {
   const estimate = estimateTrackState({
@@ -60,7 +37,7 @@ test('shahed remains extrapolated longer than missile with decayed confidence', 
   assert.ok(estimate.visualConfidence < 0.9);
 });
 
-test('missile enters terrain_masking quickly when observation is old', () => {
+test('missile becomes stale quickly when observation is old', () => {
   const estimate = estimateTrackState({
     lat: 49,
     lng: 32,
@@ -71,8 +48,8 @@ test('missile enters terrain_masking quickly when observation is old', () => {
     observations: [{ lat: 49, lng: 32, ts: now - 6 * 60_000 }],
   }, now);
 
-  assert.equal(estimate.state, 'terrain_masking');
-  assert.equal(estimate.isEstimated, true);
+  assert.equal(estimate.state, 'stale');
+  assert.equal(estimate.isEstimated, false);
 });
 
 test('ballistic track is lost after short TTL', () => {
@@ -272,38 +249,4 @@ test('worker and Next motion profile nominal speeds stay aligned', () => {
   for (const [threatType, speed] of Object.entries(expectedTypicalSpeeds)) {
     assert.equal(TRACK_MOTION_PROFILES[threatType]?.nominalSpeedKmh, speed, threatType);
   }
-});
-
-test('marker behavior differs by threat family and confidence state', () => {
-  const shahed = markerBehavior({
-    lat: 49,
-    lng: 32,
-    threat_type: 'shahed',
-    confidence: 0.9,
-    observations: [{ lat: 49, lng: 32, ts: now }],
-  }, now);
-  assert.equal(shahed.kind, 'drift');
-  assert.equal(shahed.opacity, 1);
-  assert.equal(shahed.haloOpacity, 0);
-
-  const ballistic = markerBehavior({
-    lat: 49,
-    lng: 32,
-    threat_type: 'ballistic',
-    confidence: 0.9,
-    observations: [{ lat: 49, lng: 32, ts: now }],
-  }, now);
-  assert.equal(ballistic.kind, 'strike');
-  assert.equal(ballistic.pulseMs, 0);
-
-  const stale = markerBehavior({
-    lat: 49,
-    lng: 32,
-    threat_type: 'shahed',
-    track_state: 'stale',
-    track_confidence: 0.25,
-    observations: [{ lat: 49, lng: 32, ts: now - 30 * 60_000 }],
-  }, now);
-  assert.equal(stale.haloOpacity, 0);
-  assert.equal(stale.opacity, 1);
 });

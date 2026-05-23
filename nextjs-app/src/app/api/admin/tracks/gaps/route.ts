@@ -9,6 +9,23 @@ function toMs(value: unknown): number {
   return n > 10_000_000_000 ? n : n * 1000;
 }
 
+function label(value: unknown, fallback = 'unknown'): string {
+  const s = String(value || '').trim();
+  return s || fallback;
+}
+
+function inc(bucket: Record<string, number>, key: unknown): void {
+  const k = label(key);
+  bucket[k] = (bucket[k] || 0) + 1;
+}
+
+function incMatrix(bucket: Record<string, Record<string, number>>, row: unknown, col: unknown): void {
+  const r = label(row);
+  const c = label(col);
+  if (!bucket[r]) bucket[r] = {};
+  bucket[r][c] = (bucket[r][c] || 0) + 1;
+}
+
 export async function GET(request: Request) {
   const denied = await requireAdminAuth();
   if (denied) return denied;
@@ -43,6 +60,14 @@ export async function GET(request: Request) {
 
   const gaps = [];
   const summary: Record<string, number> = {};
+  const summaryByRegion: Record<string, number> = {};
+  const summaryByType: Record<string, number> = {};
+  const summaryByRadarState: Record<string, number> = {};
+  const summaryByEvidenceLevel: Record<string, number> = {};
+  const summaryByObservationQuality: Record<string, number> = {};
+  const summaryByTextIntent: Record<string, number> = {};
+  const reasonByRegion: Record<string, Record<string, number>> = {};
+  const reasonByObservationQuality: Record<string, Record<string, number>> = {};
 
   for (const track of getTrackedTargetRecords()) {
     if (type && String(track.threat_type || track.type || '').toLowerCase() !== type) continue;
@@ -66,6 +91,14 @@ export async function GET(request: Request) {
     if (reasonFilter && publicMap.reason !== reasonFilter) continue;
 
     summary[publicMap.reason] = (summary[publicMap.reason] || 0) + 1;
+    inc(summaryByRegion, track.region);
+    inc(summaryByType, track.threat_type || track.type);
+    inc(summaryByRadarState, track.radar_state || track.track_state);
+    inc(summaryByEvidenceLevel, track.evidence_level);
+    inc(summaryByObservationQuality, track.last_observation_quality || track.position_source || track.resolve_status);
+    inc(summaryByTextIntent, track.last_text_intent);
+    incMatrix(reasonByRegion, track.region, publicMap.reason);
+    incMatrix(reasonByObservationQuality, track.last_observation_quality || track.position_source || track.resolve_status, publicMap.reason);
     const publication = evaluateMarkerPublication(track, { settings, hidden: false });
 
     gaps.push({
@@ -79,6 +112,11 @@ export async function GET(request: Request) {
       confidence: track.confidence,
       target_confidence: track.target_confidence,
       track_confidence: track.track_confidence,
+      radar_state: track.radar_state,
+      uncertainty_radius_km: track.uncertainty_radius_km,
+      evidence_level: track.evidence_level,
+      observation_quality: track.last_observation_quality,
+      text_intent: track.last_text_intent,
       source_count: track.source_count,
       count: track.count,
       current: { lat: track.lat, lng: track.lng, ts: track.last_update_epoch },
@@ -112,6 +150,14 @@ export async function GET(request: Request) {
     count: Math.min(gaps.length, limit),
     total_matching: gaps.length,
     summary,
+    summary_by_region: summaryByRegion,
+    summary_by_type: summaryByType,
+    summary_by_radar_state: summaryByRadarState,
+    summary_by_evidence_level: summaryByEvidenceLevel,
+    summary_by_observation_quality: summaryByObservationQuality,
+    summary_by_text_intent: summaryByTextIntent,
+    reason_by_region: reasonByRegion,
+    reason_by_observation_quality: reasonByObservationQuality,
     gaps: gaps.slice(0, limit),
   });
 }

@@ -4,7 +4,7 @@
  */
 import type { Marker } from '@/types';
 import { loadSettings, loadHidden } from '@/lib/admin/data';
-import { getTrackedTargetRecords } from '@/lib/tracked-target-store';
+import { getRawMessages } from '@/lib/markers-store';
 import {
   computeMarkerDisplayPolicy,
   mergeMarkerDisplayPolicyConfig,
@@ -15,7 +15,6 @@ import {
   parseRawMarkerMessageTimeMs,
   type PublicMapRawFilterContext,
 } from '@/lib/marker-publication';
-import { evaluateMarkerPublication } from '@/lib/public-marker-policy';
 import { isLatLngInOblastHasc } from '@/lib/ukraine-oblast-validate';
 import { mapStoreRecordToMarker } from '@/lib/map-store-record-to-marker';
 
@@ -73,10 +72,16 @@ export function buildMarkerOptionsForApi(extendedRange: boolean): BuildMarkersOp
 }
 
 export function buildMarkers(options?: BuildMarkersOptions): Marker[] {
-  const trackedMessages = getTrackedTargetRecords();
-  const messages = trackedMessages;
+  const messages = getRawMessages();
   const settings = loadSettings();
-  const displayPolicyConfig = mergeMarkerDisplayPolicyConfig(settings);
+  const displayPolicyConfig = mergeMarkerDisplayPolicyConfig({
+    corroborationMinObservations: settings.corroborationMinObservations,
+    corroborationWindowMinutes: settings.corroborationWindowMinutes,
+    corroborationMaxRadiusKm: settings.corroborationMaxRadiusKm,
+    corroborationMinDistinctSources: settings.corroborationMinDistinctSources,
+    regionUncertaintyKm: settings.regionUncertaintyKm,
+    corroboratedUncertaintyKm: settings.corroboratedUncertaintyKm,
+  });
 
   const corroborationCtx: CorroborationContext = {
     pointInStatedOblast: (lat, lng, hascUpper) => isLatLngInOblastHasc(hascUpper, lat, lng),
@@ -84,6 +89,7 @@ export function buildMarkers(options?: BuildMarkersOptions): Marker[] {
 
   let monitorMinutes = settings.monitorPeriod || 30;
   const ttlEnabled = settings.ttlEnabled;
+  const minConf = settings.minConfidence ?? 0.65;
 
   if (options?.retentionMinutes != null) {
     monitorMinutes = Math.max(monitorMinutes, Math.min(240, options.retentionMinutes));
@@ -99,7 +105,8 @@ export function buildMarkers(options?: BuildMarkersOptions): Marker[] {
 
   const cutoffMs = ttlEnabled ? Date.now() - monitorMinutes * 60 * 1000 : 0;
   const filterCtx: Omit<PublicMapRawFilterContext, 'messageTimeMs'> = {
-    settings,
+    minConf,
+    dualSourceMapGate: settings.dualSourceMapGate === true,
     ttlEnabled,
     cutoffMs,
     hiddenSet,
@@ -122,18 +129,7 @@ export function buildMarkers(options?: BuildMarkersOptions): Marker[] {
   return Array.from(byKey.values())
     .map((m) => {
       const disp = computeMarkerDisplayPolicy(m, displayPolicyConfig, corroborationCtx);
-      const publication = evaluateMarkerPublication(m as unknown as Record<string, unknown>, {
-        settings,
-        hidden: false,
-      });
-      return {
-        ...m,
-        ...disp,
-        publication_class: publication.classification,
-        publication_score: publication.score,
-        publication_reasons: publication.reasons,
-        event_fingerprint: publication.fingerprint,
-      };
+      return { ...m, ...disp };
     })
     .sort((a, b) => markerActivityMs(b) - markerActivityMs(a));
 }

@@ -72,8 +72,10 @@
   --hud-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   --hud-modal-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
   --hud-backdrop: rgba(0, 0, 0, 0.4);
-  --hud-danger: #ef4444;
-  --hud-danger-bg: rgba(239, 68, 68, 0.15);
+  --map-alarm-color: #630e0e;
+  --glow-danger: #630e0e;
+  --hud-danger: #630e0e;
+  --hud-danger-bg: rgba(99, 14, 14, 0.22);
   --hud-success: #10b981;
   color-scheme: dark;
 }
@@ -129,8 +131,10 @@
   --hud-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   --hud-modal-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
   --hud-backdrop: rgba(0, 0, 0, 0.2);
-  --hud-danger: #ef4444;
-  --hud-danger-bg: rgba(239, 68, 68, 0.1);
+  --map-alarm-color: #630e0e;
+  --glow-danger: #630e0e;
+  --hud-danger: #630e0e;
+  --hud-danger-bg: rgba(99, 14, 14, 0.12);
   --hud-success: #10b981;
   color-scheme: light;
 }
@@ -388,16 +392,16 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .stateObject.alarm {
-  fill: rgba(180, 0, 0, 0.55);
-  stroke: rgba(230, 30, 30, 1);
+  fill: rgba(99, 14, 14, 0.58);
+  stroke: #630e0e;
   stroke-width: 0.8;
-  filter: drop-shadow(0 0 14px rgba(200, 0, 0, 0.7)) drop-shadow(0 0 4px rgba(255, 60, 60, 0.4));
+  filter: drop-shadow(0 0 14px rgba(99, 14, 14, 0.65)) drop-shadow(0 0 4px rgba(99, 14, 14, 0.35));
   animation: alarmGlassPulse 2.2s ease-in-out infinite;
 }
 .theme-light .stateObject.alarm {
-  fill: rgba(160, 0, 0, 0.48);
-  stroke: rgba(120, 0, 0, 1);
-  filter: drop-shadow(0 0 10px rgba(130, 0, 0, 0.45));
+  fill: rgba(99, 14, 14, 0.5);
+  stroke: #630e0e;
+  filter: drop-shadow(0 0 10px rgba(99, 14, 14, 0.4));
 }
 
 /* GPU-compositable: animate opacity + subtle stroke brightness */
@@ -433,16 +437,16 @@ html.embed-mode .leaflet-popup-pane {
 }
 
 .dist.alarm {
-  fill: rgba(180, 0, 0, 0.52);
-  stroke: rgba(230, 30, 30, 0.6);
+  fill: rgba(99, 14, 14, 0.55);
+  stroke: rgba(99, 14, 14, 0.85);
   stroke-width: 0.4;
-  filter: drop-shadow(0 0 10px rgba(200, 0, 0, 0.55));
+  filter: drop-shadow(0 0 10px rgba(99, 14, 14, 0.5));
   animation: alarmGlassPulse 2.2s ease-in-out infinite;
 }
 .theme-light .dist.alarm {
-  fill: rgba(160, 0, 0, 0.42);
-  stroke: rgba(120, 0, 0, 0.5);
-  filter: drop-shadow(0 0 8px rgba(110, 0, 0, 0.34));
+  fill: rgba(99, 14, 14, 0.45);
+  stroke: rgba(99, 14, 14, 0.7);
+  filter: drop-shadow(0 0 8px rgba(99, 14, 14, 0.32));
 }
 
 /* ============================================
@@ -1190,8 +1194,8 @@ html.dark .neptun-popup-card__btn--muted {
 }
 
 .alarm-status-bar--active {
-  border-color: rgba(185, 0, 0, 0.3);
-  background: color-mix(in srgb, var(--hud-surface) 88%, rgba(185, 0, 0, 0.25));
+  border-color: rgba(99, 14, 14, 0.35);
+  background: color-mix(in srgb, var(--hud-surface) 88%, rgba(99, 14, 14, 0.28));
 }
 
 .alarm-status-bar__dot {
@@ -1208,20 +1212,20 @@ html.dark .neptun-popup-card__btn--muted {
 }
 
 .alarm-status-bar__dot--alarm {
-  background: #dc2626;
-  box-shadow: 0 0 10px rgba(220, 38, 38, 0.7);
+  background: #630e0e;
+  box-shadow: 0 0 10px rgba(99, 14, 14, 0.7);
   animation: alarmDotPing 1.4s ease-in-out infinite;
 }
 
 @keyframes alarmDotPing {
-  0%, 100% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.7); transform: scale(1); }
-  50%       { box-shadow: 0 0 18px rgba(220, 38, 38, 0.9); transform: scale(1.25); }
+  0%, 100% { box-shadow: 0 0 10px rgba(99, 14, 14, 0.7); transform: scale(1); }
+  50%       { box-shadow: 0 0 18px rgba(99, 14, 14, 0.9); transform: scale(1.25); }
 }
 
 .alarm-status-bar__count {
   font-size: 12px;
   font-weight: 800;
-  color: #ef4444;
+  color: #630e0e;
   flex-shrink: 0;
   min-width: 14px;
   font-variant-numeric: tabular-nums;
@@ -1286,6 +1290,144 @@ html.dark .neptun-popup-card__btn--muted {
   border-bottom: 1px solid var(--hud-border);
 }
 
+/* Top HUD: glass surface (прозорість + blur, як раніше) */
+.cinematic-button {
+  border: 1px solid var(--hud-border);
+  background: var(--hud-surface);
+  color: var(--hud-text);
+  box-shadow: var(--hud-shadow);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.cinematic-button:hover {
+  background: color-mix(in srgb, var(--hud-surface) 70%, var(--hud-hover));
+}
+
+.hud-top-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 9999px;
+}
+
+.hud-top-icon-btn:active,
+.cinematic-button:active {
+  transform: scale(0.98);
+}
+
+.hud-top-pill {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding: 0.25rem 0.375rem 0.25rem 0.25rem;
+  border-radius: 9999px;
+  text-decoration: none;
+}
+
+.hud-top-icon-btn,
+.hud-top-pill {
+  border: 1px solid var(--hud-border);
+  background: var(--hud-surface);
+  color: var(--hud-text);
+  box-shadow: var(--hud-shadow);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.hud-top-icon-btn:hover,
+.hud-top-pill:hover {
+  background: color-mix(in srgb, var(--hud-surface) 70%, var(--hud-hover));
+}
+
+.hud-top-icon-btn:active,
+.hud-top-pill:active {
+  transform: scale(0.98);
+}
+
+/* Верхня панель: пошук зліва, Telegram + меню справа */
+.neptun-top-hud {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.neptun-top-hud__search {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.neptun-top-hud__actions {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.neptun-top-hud__actions .hud-top-pill {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.neptun-top-hud__menu {
+  flex-shrink: 0;
+}
+
+@media (min-width: 640px) {
+  .neptun-top-hud {
+    inset-inline: 1rem !important;
+    width: auto !important;
+    transform: none !important;
+    gap: 1rem;
+  }
+
+  .neptun-top-hud__search {
+    flex: 0 0 auto;
+    width: min(100%, 20rem);
+    max-width: 22rem;
+  }
+
+  .neptun-top-hud__actions {
+    flex: 0 1 auto;
+    gap: 0.75rem;
+  }
+
+  .neptun-top-hud__actions .hud-top-pill {
+    flex: 0 1 auto;
+    width: auto;
+    max-width: min(100%, 22rem);
+  }
+
+  .hud-top-icon-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .neptun-top-hud {
+    inset-inline: 1.25rem !important;
+    gap: 1rem;
+  }
+
+  .neptun-top-hud__search {
+    width: 22rem;
+    max-width: 24rem;
+  }
+}
+
 /* Single-row HUD strip */
 .tactical-hud-strip {
   display: flex;
@@ -1294,15 +1436,17 @@ html.dark .neptun-popup-card__btn--muted {
   max-width: 100%;
   margin: 0 auto;
   padding: 0 12px;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
   height: 40px;
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-space-grotesk), sans-serif;
   font-size: 11px;
   color: var(--hud-text);
 }
 
 @media (min-width: 640px) {
-  .tactical-hud-strip { height: 44px; font-size: 12px; }
+  .tactical-hud-strip {
+    height: 44px;
+    font-size: 12px;
+  }
 }
 
 .tactical-hud-segment {
@@ -1319,8 +1463,14 @@ html.dark .neptun-popup-card__btn--muted {
   text-decoration: none;
   gap: 7px;
   padding: 0 12px 0 4px;
+  border-top-left-radius: 99px;
+  border-bottom-left-radius: 99px;
 }
-.tactical-hud-segment--logo:hover { background: var(--hud-hover); border-radius: 0; }
+
+.tactical-hud-segment--logo:hover {
+  background: var(--hud-hover);
+  border-radius: 99px;
+}
 
 .tactical-hud-segment--btn {
   cursor: pointer;
@@ -1333,19 +1483,21 @@ html.dark .neptun-popup-card__btn--muted {
 .tactical-hud-segment--btn:hover { background: var(--hud-hover); }
 .tactical-hud-segment--btn:active { background: var(--hud-active); }
 
-.tactical-hud-segment--alarm { background: rgba(185, 0, 0, 0.08); }
+.tactical-hud-segment--alarm { background: var(--hud-danger-bg); }
 
 .tactical-hud-segment--update { display: none; }
-@media (min-width: 480px) { .tactical-hud-segment--update { display: flex; } }
+@media (min-width: 480px) { .tactical-hud-segment--update { display: flex; border-top-right-radius: 99px; border-bottom-right-radius: 99px; } }
 
 .tactical-hud-brand {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--hud-text);
+  color: var(--glow-cyan);
+  font-family: var(--font-rajdhani), sans-serif;
+  text-shadow: 0 0 8px rgba(0, 209, 255, 0.4);
 }
-@media (min-width: 640px) { .tactical-hud-brand { font-size: 12px; } }
+@media (min-width: 640px) { .tactical-hud-brand { font-size: 13px; } }
 
 .tactical-hud-divider {
   width: 1px;
@@ -1371,7 +1523,7 @@ html.dark .neptun-popup-card__btn--muted {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: #dc2626;
+  background: var(--glow-danger);
   animation: hudPing 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
   opacity: 0.6;
 }
@@ -1388,27 +1540,44 @@ html.dark .neptun-popup-card__btn--muted {
   z-index: 1;
   flex-shrink: 0;
 }
-.tactical-hud-dot--alarm  { background: #dc2626; box-shadow: 0 0 8px rgba(220, 38, 38, 0.7); }
+.tactical-hud-dot--alarm  { background: var(--glow-danger); box-shadow: 0 0 8px var(--glow-danger); }
 .tactical-hud-dot--ok     { background: var(--hud-divider); }
-.tactical-hud-dot--online { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+.tactical-hud-dot--online { background: var(--glow-success); box-shadow: 0 0 6px var(--glow-success); }
 
-.tactical-hud-stat-label { font-weight: 500; color: var(--hud-muted); }
-.tactical-hud-stat-label--sm { font-size: 10px; }
+.tactical-hud-stat-label {
+  font-weight: 600;
+  color: var(--hud-muted);
+  font-family: var(--font-rajdhani), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
-.tactical-hud-stat-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--hud-text); }
-.tactical-hud-stat-value--alarm { color: #ef4444; }
+.tactical-hud-stat-label--sm {
+  font-size: 11px;
+}
+
+.tactical-hud-stat-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--hud-text); font-family: var(--font-rajdhani), sans-serif; }
+.tactical-hud-stat-value--alarm { color: var(--glow-danger); text-shadow: 0 0 6px rgba(99, 14, 14, 0.45); }
 .tactical-hud-stat-value--muted { color: var(--hud-muted); }
 
-.tactical-hud-chevron { width: 11px; height: 11px; color: var(--hud-muted); flex-shrink: 0; }
+.tactical-hud-chevron {
+  width: 11px;
+  height: 11px;
+  color: var(--hud-muted);
+  flex-shrink: 0;
+}
 
-.tactical-hud-icon { width: 13px; height: 13px; flex-shrink: 0; color: var(--hud-muted); }
+.tactical-hud-icon { width: 13px; height: 13px; flex-shrink: 0; color: var(--glow-cyan); }
 .tactical-hud-icon--sm { width: 11px; height: 11px; }
 
 .tactical-hud-update-label {
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--hud-muted);
   white-space: nowrap;
+  font-family: var(--font-rajdhani), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* ============================================
@@ -1443,7 +1612,7 @@ html.dark .neptun-popup-card__btn--muted {
   transform: translateY(100%);
   transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
   pointer-events: auto;
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-space-grotesk), sans-serif;
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
 }
 
@@ -1478,32 +1647,37 @@ html.dark .neptun-popup-card__btn--muted {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--hud-text);
+  color: var(--glow-cyan);
+  font-family: var(--font-rajdhani), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   flex: 1;
   min-width: 0;
+  text-shadow: 0 0 8px rgba(0, 209, 255, 0.5);
 }
 
 .threat-drawer__live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  background: var(--glow-danger);
+  box-shadow: 0 0 8px var(--glow-danger);
   flex-shrink: 0;
   animation: liveDotPulse 2s ease-in-out infinite;
 }
 
 @keyframes liveDotPulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
+  50%       { opacity: 0.4; }
 }
 
 .threat-drawer__count-badge {
   font-size: 11px;
   font-weight: 700;
-  color: var(--hud-muted);
+  font-family: var(--font-rajdhani), sans-serif;
+  color: var(--hud-text);
   background: var(--hud-chip);
   padding: 2px 8px;
   border-radius: 99px;
@@ -1578,29 +1752,36 @@ html.dark .neptun-popup-card__btn--muted {
 }
 
 .threat-drawer__item-type {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-family: var(--font-rajdhani), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 5px;
 }
 
 .threat-drawer__item-count {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  background: rgba(255, 107, 53, 0.2);
-  border: 1px solid rgba(255, 107, 53, 0.3);
-  color: #ff6b35;
+  font-family: var(--font-rajdhani), sans-serif;
+  background: rgba(255, 184, 0, 0.2);
+  border: 1px solid rgba(255, 184, 0, 0.4);
+  color: var(--glow-warning);
   padding: 0 5px;
   border-radius: 99px;
+  text-shadow: 0 0 4px var(--glow-warning);
 }
 
 .threat-drawer__item-time {
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-rajdhani), sans-serif;
   color: var(--hud-muted);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
 }
 
 .threat-drawer__item-place {

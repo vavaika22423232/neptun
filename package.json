@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "expo": "npm --prefix neptun_expo_app run start",
+    "ios": "npm --prefix neptun_expo_app run ios",
+    "android": "npm --prefix neptun_expo_app run android",
+    "web": "npm --prefix neptun_expo_app run web",
+    "typecheck:expo": "npm --prefix neptun_expo_app run typecheck"
+  }
+}

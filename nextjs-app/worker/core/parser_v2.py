@@ -1245,6 +1245,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'ціль', 'бік', 'балістиці', 'балістики', 'балістик',
         'північного сходу', 'південного-сходу', 'південного',
         'місто', 'район', 'область', 'ціль на',
+        'р-н', 'рн', 'р', 'н',
         'швидкісна', 'швидкісна ціль',
         # monikppy-specific noise words
         'особлива', 'уважно', 'тот', 'ачм', 'акваторія',
@@ -1258,6 +1259,7 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         'рухаються', 'рухається', 'активність', 'активніст',
         'ворожих', 'ворожий', 'ворожа', 'значна', 'значний',
         'вздовж', 'лінії', 'зіткнення', 'центрі', 'центр',
+        'центра',
         'озброєння', 'озброєнн', 'застосування', 'застосуванн',
         'із', 'заходу', 'півночі', 'півдня', 'сходу',
         'запорізької', 'харківської', 'дніпропетровської',
@@ -1472,6 +1474,17 @@ def _extract_place_names(text: str, oblast: Optional[str]) -> list[str]:
         (r'\bЦаричанк[аеиіу]\b|\bЦаричанк[и]\b', 'Царичанка'),
         (r'\bНовоселиц[яі]\b', 'Новоселиця'),
         (r'\bЛящівк[аеиіу]\b', 'Лящівка'),
+        (r'\bМолдаванк(?:а|е|и|і|у|ой|ою)\b', 'Молдаванка'),
+        (r'\bОтрад(?:а|е|и|і|у|ой|ою)\b', 'Отрада'),
+        (r'\b(?:Ленпаселок|Ленпос[её]лок|Ленінськ(?:ий)?\s+пос[её]лок)\b', 'Ленпаселок'),
+        (r'\bМал(?:ий|ый)\s+Фонтан\b', 'Малий Фонтан'),
+        (r'\bСлободк[аеиіу]\b|\bСлобідк[аеиіу]\b', 'Слободка'),
+        (r'\bПорт[ауі]?\b', 'Порт'),
+        (r'\bСовиньон[ауі]?\b', 'Совиньон'),
+        (r'\bТа[їи]ров[аоіу]?\b', 'Таїрово'),
+        (r'\bВузовск(?:ий|ого|ому|им)?\b|\bВузівськ(?:ий|ого|ому|им)?\b', 'Вузовський'),
+        (r'\bЧер[её]мушк(?:и|і|а|ах)\b', 'Черемушки'),
+        (r'\bЛиманк[аиіу]\b', 'Лиманка'),
     ]
     for pat, canonical in _local_patterns:
         for m in re.finditer(pat, text, re.IGNORECASE):
@@ -1743,7 +1756,7 @@ def _extract_near(text: str) -> Optional[str]:
     m = RE_NEAR.search(text)
     if m:
         near = m.group(1).strip()
-        near = re.split(r'\b(?:далі|потім|курс(?:ом)?|напрям(?:ок|ку)?)\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        near = re.split(r'\b(?:далі|потім|курс(?:ом)?|напрям(?:ок|ку)?|на)\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         near = re.split(r'\b(?:в|у)\s*\d+\s*км\b', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         near = re.split(r'\b(?:від|от)\s+берег', near, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         near = re.sub(r'\s+\b(?:в|у)\s*$', '', near, flags=re.IGNORECASE).strip()
@@ -1773,6 +1786,10 @@ def _extract_origin(text: str) -> Optional[str]:
     while len(words) > 1 and words[-1] in _ORIGIN_NOISE_WORDS:
         words.pop()
     raw = ' '.join(words)
+    if re.search(r'(?:акваторі[яії]|акватория)?.*чорн(?:ого|е|ому|им)?(?:\s+мор)?', raw, re.IGNORECASE):
+        return 'Чорне море'
+    if re.search(r'(?:акватори[яи])?.*черн(?:ого|ое|ом|ым)?(?:\s+мор)?', raw, re.IGNORECASE):
+        return 'Чорне море'
     # Check ORIGIN_NORMALIZATION
     for key, canonical in ORIGIN_NORMALIZATION.items():
         if key == raw or raw.startswith(key):
@@ -2525,6 +2542,17 @@ def extract_all_entities(text: str) -> list[ParsedEntities]:
     # should NOT create markers. These are editorial recaps, not real-time tracking.
     if _is_summary_message(normalized, text):
         log.debug(f"PARSER DROP [summary]: '{text[:60]}'")
+        return [ParsedEntities(event_type='info', raw_text=text, is_negation=True)]
+
+    # Channel recap format like:
+    # "По БпЛА: ... Особлива увага: city list" is an attention/watch list,
+    # not current positions. Creating markers from those city names caused
+    # false tracks far from the reported route.
+    if (
+        re.search(r'\bпо\s+(?:бпла|шахед|дрон)[а-яіїєґ]*\s*:', normalized, re.IGNORECASE)
+        and re.search(r'\bособлива\s+увага\s*:', normalized, re.IGNORECASE)
+    ):
+        log.debug(f"PARSER DROP [summary-watchlist]: '{text[:60]}'")
         return [ParsedEntities(event_type='info', raw_text=text, is_negation=True)]
 
     # ── Planning / warning message detection ──────────────────────────

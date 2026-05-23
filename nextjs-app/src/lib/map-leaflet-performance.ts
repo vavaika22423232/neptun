@@ -14,6 +14,7 @@ import {
 } from '@/lib/map/ua-raster-fallback';
 
 export type MapBasemapKind =
+  | 'radarHybrid'
   | 'googleHybrid'
   | 'rasterVectorDark'
   | 'cartoDark'

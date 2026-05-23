@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
+import { PRESENCE_VISITOR_TIMEOUT_MS } from '@/lib/constants';
 import { getRedis } from '@/lib/redis';
+import { PresencePingSchema } from '@/lib/api-schemas';
+import { getClientIp, ipRedisTag } from '@/lib/client-ip';
+import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
+import { logSecurityEvent } from '@/lib/security-log';
 
 /**
  * Presence tracking via Redis sorted sets (cluster-safe).
@@ -7,10 +12,11 @@ import { getRedis } from '@/lib/redis';
  * Two sorted sets: presence:web and presence:app
  * Score = Unix timestamp (ms), member = user ID.
  * Users with score older than VISITOR_TIMEOUT are expired via ZREMRANGEBYSCORE.
+ *
+ * «Онлайн» = активна сесія (вкладка/додаток відкриті), у т.ч. у фоні — не лише активний перегляд.
  */
 
-// Must exceed client POST heartbeat interval (PRESENCE_INTERVAL) so users are not dropped between pings.
-const VISITOR_TIMEOUT = 420_000; // 7 minutes
+const VISITOR_TIMEOUT = PRESENCE_VISITOR_TIMEOUT_MS;
 const KEY_WEB = 'presence:web';
 const KEY_APP = 'presence:app';
 
@@ -42,12 +48,24 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { id, platform } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+    const ip = getClientIp(request);
+    const allowed = await redisFixedWindowAllow(
+      `rl:presence:${ipRedisTag(ip)}`,
+      120,
+      60,
+      false,
+    );
+    if (!allowed) {
+      logSecurityEvent('rate_limit_hit', { route: 'presence_post' });
+      return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
     }
+
+    const parsed = PresencePingSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
+    }
+
+    const { id, platform } = parsed.data;
 
     const redis = getRedis();
     const now = Date.now();

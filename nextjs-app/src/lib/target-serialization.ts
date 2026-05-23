@@ -3,7 +3,7 @@
  * Used by tracked-target-store.ts and directly importable in unit tests.
  */
 import { type TrackedTarget } from '@/lib/target-tracker-engine';
-import { KalmanFilter2D, type KalmanFilterJSON } from '@/lib/ekf';
+import { KalmanFilter2D, IMMFilter2D, type KalmanFilterJSON, type IMMFilterJSON } from '@/lib/ekf';
 import type { MarkerPublicationDecision } from '@/lib/public-marker-policy';
 
 type StoredPublication = NonNullable<TrackedTarget['publication']>;
@@ -113,16 +113,24 @@ function sanitizeAssociation(value: unknown): StoredAssociation | undefined {
     bearing_penalty: finiteNumberOr(raw.bearing_penalty, 0),
     corridor_penalty: finiteNumberOr(raw.corridor_penalty, 0),
     innovation_penalty: finiteNumberOr(raw.innovation_penalty, 0),
+    quality_penalty: numberOrUndefined(raw.quality_penalty),
+    group_bonus: numberOrUndefined(raw.group_bonus),
+    text_intent: typeof raw.text_intent === 'string' ? raw.text_intent : undefined,
+    observation_quality: typeof raw.observation_quality === 'string' ? raw.observation_quality : undefined,
     accepted: raw.accepted === true,
     reason: String(raw.reason || ''),
   };
 }
 
-/** Reconstruct a KalmanFilter2D from its serialized JSON form. Returns undefined on invalid data. */
-function deserializeEkf(value: unknown): KalmanFilter2D | undefined {
+/** Reconstruct a KalmanFilter2D or IMMFilter2D from its serialized JSON form. Returns undefined on invalid data. */
+function deserializeEkf(value: unknown): KalmanFilter2D | IMMFilter2D | undefined {
   if (!value || typeof value !== 'object') return undefined;
   try {
-    const ekfRaw = value as KalmanFilterJSON;
+    const raw = value as any;
+    if (Array.isArray(raw.weights) && Array.isArray(raw.filters)) {
+      return IMMFilter2D.fromJSON(raw as IMMFilterJSON);
+    }
+    const ekfRaw = raw as KalmanFilterJSON;
     if (
       !Array.isArray(ekfRaw.state) ||
       ekfRaw.state.length !== 4 ||
@@ -197,6 +205,12 @@ export function sanitizeTrackedTarget(value: unknown): TrackedTarget | null {
     last_message_text: typeof raw.last_message_text === 'string' ? raw.last_message_text : undefined,
     last_resolve_status: typeof raw.last_resolve_status === 'string' ? raw.last_resolve_status : undefined,
     last_placement_mode: typeof raw.last_placement_mode === 'string' ? raw.last_placement_mode : undefined,
+    last_observation_quality: typeof raw.last_observation_quality === 'string'
+      ? raw.last_observation_quality as TrackedTarget['last_observation_quality']
+      : undefined,
+    last_text_intent: typeof raw.last_text_intent === 'string'
+      ? raw.last_text_intent as TrackedTarget['last_text_intent']
+      : undefined,
     parent_track_id: typeof raw.parent_track_id === 'string' ? raw.parent_track_id : undefined,
     swarm_cluster_id: typeof raw.swarm_cluster_id === 'string' ? raw.swarm_cluster_id : undefined,
     ekf: deserializeEkf(raw.ekf),

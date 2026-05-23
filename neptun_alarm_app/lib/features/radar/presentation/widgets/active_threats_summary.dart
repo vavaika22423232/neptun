@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
-import '../../../../core/widgets/status_chip.dart';
+
+import '../../../../design/design_exports.dart';
 
 class ActiveThreatsSummary extends StatelessWidget {
-  final int activeAlarms;
-  final int markers;
-  final DateTime? updatedAt;
-
   const ActiveThreatsSummary({
     super.key,
     required this.activeAlarms,
     required this.markers,
     this.updatedAt,
   });
+
+  final int activeAlarms;
+  final int markers;
+  final DateTime? updatedAt;
 
   @override
   Widget build(BuildContext context) {
@@ -33,11 +34,11 @@ class ActiveThreatsSummary extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
-                StatusChip(
+                StatusPill(
                   label: critical ? '$activeAlarms regions' : 'clear',
-                  tone: critical
-                      ? StatusChipTone.critical
-                      : StatusChipTone.safe,
+                  variant: critical
+                      ? StatusPillVariant.alarm
+                      : StatusPillVariant.safe,
                   icon: critical
                       ? Icons.warning_amber_rounded
                       : Icons.check_circle_rounded,

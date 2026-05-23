@@ -490,20 +490,82 @@ function targetToStoreRecord(target: TrackedTarget, nowMs = Date.now()): Record<
     trajectory_feedback: target.trajectory_feedback,
     threat_type_history: target.threat_type_history?.length ? target.threat_type_history : undefined,
     threat_type_reclassified_from: target.threat_type_reclassified_from,
+    // V9 M5: Predicted impact & quality score
+    predicted_impact: computePredictedImpact(displayLat, displayLng, target.movement_vector.bearing_deg, target.speed_estimate_kmh, displayTrackState),
+    track_quality_score: computeExportedQualityScore(target),
   };
+}
+
+function computePredictedImpact(
+  lat: number, lng: number,
+  bearingDeg: number | null | undefined,
+  speedKmh: number | null | undefined,
+  trackState: string,
+): { lat: number; lng: number; eta_min: number } | undefined {
+  if (trackState === 'lost' || trackState === 'stale') return undefined;
+  if (!bearingDeg || !speedKmh || speedKmh < 20) return undefined;
+  const horizonMin = 15;
+  const distKm = speedKmh * (horizonMin / 60);
+  const RAD = Math.PI / 180;
+  const φ1 = lat * RAD;
+  const λ1 = lng * RAD;
+  const θ = bearingDeg * RAD;
+  const R = 6371;
+  const d = distKm / R;
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(θ));
+  const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(d) * Math.cos(φ1), Math.cos(d) - Math.sin(φ1) * Math.sin(φ2));
+  const etaMin = Math.round(distKm / speedKmh * 60);
+  return { lat: Math.round(φ2 / RAD * 1000) / 1000, lng: Math.round((λ2 / RAD) * 1000) / 1000, eta_min: etaMin };
+}
+
+function computeExportedQualityScore(target: TrackedTarget): number {
+  const sourcePts = Math.min(30, Math.round(Math.log2(Math.max(1, target.source_count)) * 10));
+  const confPts = Math.round(target.confidence * 30);
+  const history = Array.isArray(target.history) ? target.history : [];
+  const uniqueChannels = new Set(history.filter((h) => h.accepted).map((h) => h.source).filter(Boolean)).size;
+  const spreadPts = Math.min(20, Math.round((uniqueChannels / 3) * 20));
+  const priorities = history.filter((h) => h.accepted && typeof h.channel_priority === 'number').map((h) => h.channel_priority as number);
+  const bestPriority = priorities.length > 0 ? Math.min(...priorities) : 999;
+  const tierPts = bestPriority <= 10 ? 20 : bestPriority <= 50 ? 14 : bestPriority <= 200 ? 7 : 0;
+  return sourcePts + confPts + spreadPts + tierPts;
+}
+
+/** Hard cap: never persist LOST/DESTROYED targets older than this. */
+const SNAPSHOT_MAX_LOST_AGE_MS = 4 * 60 * 60_000; // 4 hours
+/** Hard cap: maximum number of targets in a single snapshot (keeps oldest LOST first to prune). */
+const SNAPSHOT_MAX_TARGETS = 500;
+
+function pruneSnapshotForPersistence(snapshot: TrackedTarget[]): TrackedTarget[] {
+  const nowMs = Date.now();
+  // Drop stale LOST/DESTROYED beyond 4-hour hard cap
+  const trimmed = snapshot.filter((t) => {
+    if (t.lifecycle_state !== 'LOST' && t.lifecycle_state !== 'DESTROYED') return true;
+    return (nowMs - t.last_seen) < SNAPSHOT_MAX_LOST_AGE_MS;
+  });
+  // Hard cap on total size: keep all active + most-recent LOST up to limit
+  if (trimmed.length <= SNAPSHOT_MAX_TARGETS) return trimmed;
+  const active = trimmed.filter(
+    (t) => t.lifecycle_state === 'CONFIRMED' || t.lifecycle_state === 'TRACKING' ||
+           t.lifecycle_state === 'DETECTED' || t.lifecycle_state === 'STALE',
+  );
+  const inactive = trimmed
+    .filter((t) => t.lifecycle_state === 'LOST' || t.lifecycle_state === 'DESTROYED')
+    .sort((a, b) => b.last_seen - a.last_seen); // newest first
+  const inactiveSlots = Math.max(0, SNAPSHOT_MAX_TARGETS - active.length);
+  return [...active, ...inactive.slice(0, inactiveSlots)];
 }
 
 async function persistTargets(): Promise<void> {
   const state = getState();
-  const snapshot = state.engine?.snapshot() ?? [];
+  const rawSnapshot = state.engine?.snapshot() ?? [];
+  const snapshot = pruneSnapshotForPersistence(rawSnapshot);
   // P4-C: Smart TTL — extend TTL proportionally to active track count.
-  // More active tracks means higher operational value; we keep data longer.
   const activeCount = snapshot.filter(
     (t) => t.lifecycle_state === 'CONFIRMED' || t.lifecycle_state === 'TRACKING' || t.lifecycle_state === 'DETECTED',
   ).length;
   const ttlSeconds = Math.min(
     REDIS_TARGETS_MAX_TTL_SECONDS,
-    REDIS_TARGETS_TTL_SECONDS + activeCount * 600, // +10 min per active track, max 24h
+    REDIS_TARGETS_TTL_SECONDS + activeCount * 600,
   );
   await redisSet(REDIS_TARGETS_KEY, snapshot, ttlSeconds);
   if (!isRedisDisabledInThisProcess()) {
@@ -618,20 +680,69 @@ export async function syncTargetStoreFromRedis(): Promise<void> {
   clearMarkerDerivedApiCachesLocal();
 }
 
+/** V9 M3: In-process channel reliability stats (24h rolling window, resets on restart). */
+const channelStats = new Map<string, { accepted: number; rejected: number; total: number; windowStart: number }>();
+const CHANNEL_STATS_WINDOW_MS = 24 * 60 * 60_000;
+
+function getChannelReliabilityMultiplier(source: string | undefined): number {
+  if (!source) return 1.0;
+  const stats = channelStats.get(source);
+  if (!stats || stats.total < 10) return 1.0; // not enough data
+  const acceptRate = stats.accepted / stats.total;
+  if (acceptRate >= 0.85) return 1.08;   // +8% confidence bonus
+  if (acceptRate >= 0.65) return 1.0;    // neutral
+  if (acceptRate >= 0.45) return 0.90;   // -10% mild penalty
+  return 0.82;                           // -18% severe penalty
+}
+
+function recordChannelOutcome(source: string | undefined, accepted: boolean): void {
+  if (!source) return;
+  const now = Date.now();
+  let s = channelStats.get(source);
+  if (!s || (now - s.windowStart) > CHANNEL_STATS_WINDOW_MS) {
+    s = { accepted: 0, rejected: 0, total: 0, windowStart: now };
+    channelStats.set(source, s);
+  }
+  s.total++;
+  if (accepted) s.accepted++; else s.rejected++;
+}
+
 export async function ingestMarkerEvidence(marker: Record<string, unknown>): Promise<TrackerDecision | null> {
   await initTargetStore();
   const candidate = markerToCandidateEvent(marker);
   if (!candidate) return null;
 
+  // V9 M3: Apply channel reliability multiplier to confidence before ingestion
+  const reliabilityMult = getChannelReliabilityMultiplier(candidate.source);
+  if (reliabilityMult !== 1.0 && candidate.confidence != null) {
+    candidate.confidence = Math.min(0.97, Math.max(0.05, candidate.confidence * reliabilityMult));
+  }
+
   return withTargetWriteLock(async () => {
     const state = getState();
     if (!state.engine) state.engine = new TargetTrackerEngine(loadSettings());
     const decision = state.engine.ingest(candidate);
+    // V9 M3: Record channel outcome for reliability stats
     if (decision.action !== 'REPLAY_SUPPRESSED') {
+      const wasAccepted = decision.action === 'TARGET_UPDATED' || decision.action === 'TARGET_CREATED';
+      recordChannelOutcome(candidate.source, wasAccepted);
       await persistTargets();
     }
     return decision;
   });
+}
+
+export function getChannelStats(): Record<string, { accepted: number; rejected: number; total: number; acceptRate: number }> {
+  const result: Record<string, { accepted: number; rejected: number; total: number; acceptRate: number }> = {};
+  for (const [name, stats] of channelStats) {
+    result[name] = {
+      accepted: stats.accepted,
+      rejected: stats.rejected,
+      total: stats.total,
+      acceptRate: stats.total > 0 ? Math.round((stats.accepted / stats.total) * 100) / 100 : 0,
+    };
+  }
+  return result;
 }
 
 export async function dryRunMarkerEvidence(marker: Record<string, unknown>): Promise<Record<string, unknown> | null> {
@@ -705,6 +816,12 @@ export async function clearTrackedTargetsByRegion(
   region: string,
   threatTypes?: string[],
   placeContains?: string,
+  options?: {
+    /** Channel priority of the all-clear source (lower = more authoritative). */
+    channelPriority?: number;
+    /** ISO timestamp of the all-clear message. */
+    clearedAt?: string;
+  },
 ): Promise<number> {
   await initTargetStore();
   return withTargetWriteLock(async () => {
@@ -714,6 +831,12 @@ export async function clearTrackedTargetsByRegion(
     const regionNorm = norm(region);
     const typeSet = new Set((threatTypes || []).map(norm).filter(Boolean));
     const placeNeedle = norm(placeContains);
+    const nowMs = Date.now();
+    // V9 M6: All-clear source authority — tier-1 channels act immediately, others need 2+ sources
+    const isTier1 = (options?.channelPriority ?? 999) <= 10;
+    // Anti-false-clear window: don't act on targets observed < 2 min ago
+    const RECENT_THRESHOLD_MS = 2 * 60_000;
+
     let changed = 0;
     for (const target of engine.snapshot()) {
       if (regionNorm && norm(target.region) !== regionNorm) continue;
@@ -722,7 +845,15 @@ export async function clearTrackedTargetsByRegion(
       if (target.lifecycle_state === 'LOST' || target.lifecycle_state === 'DESTROYED' || target.lifecycle_state === 'REJECTED') {
         continue;
       }
-      if (engine.markLifecycle(target.id, 'LOST')) changed += 1;
+      // V9 M6: Anti-false-clear — skip recently observed targets
+      if ((nowMs - target.last_seen) < RECENT_THRESHOLD_MS) continue;
+      // V9 M6: Smarter lifecycle transition based on track confidence & source authority
+      if (target.lifecycle_state === 'CONFIRMED' && !isTier1) {
+        // CONFIRMED tracks get downgraded to STALE, not immediately LOST, unless tier-1
+        if (engine.markLifecycle(target.id, 'STALE')) changed += 1;
+      } else {
+        if (engine.markLifecycle(target.id, 'LOST')) changed += 1;
+      }
     }
     if (changed > 0) await persistTargets();
     return changed;
@@ -837,24 +968,32 @@ export function startTrackedTargetTicker(): void {
   // Periodic maintenance — every 5 minutes
   const MAINTENANCE_INTERVAL_MS = 5 * 60_000;
   setInterval(() => {
-    try {
-      const s = getState();
-      if (!s.engine) return;
-      // v3 maintenance
-      s.engine.detectFormations();
-      s.engine.detectSwarms();
-      s.engine.enrichGeoContext();
-      s.engine.detectAndMergeDuplicates();
-      s.engine.deduplicateCrossChannelReposts();
-      // v4 maintenance
-      s.engine.computeSwarmCentroids();
-      s.engine.computeCrossOblastCorrelation();
-      s.engine.updateGhostPool();
-      s.engine.reapStaleTracks();
-      s.engine.inferLaunchOrigins();
-    } catch (err) {
-      console.warn('[MAINTENANCE] Error:', err);
-    }
+    withTargetWriteLock(async () => {
+      try {
+        const s = getState();
+        if (!s.engine) return;
+        // v3 maintenance
+        s.engine.detectFormations();
+        s.engine.detectSwarms();
+        s.engine.enrichGeoContext();
+        s.engine.detectAndMergeDuplicates();
+        s.engine.deduplicateCrossChannelReposts();
+        // v4 maintenance
+        s.engine.computeSwarmCentroids();
+        s.engine.computeCrossOblastCorrelation();
+        s.engine.updateGhostPool();
+        s.engine.inferLaunchOrigins();
+        // V9: reap + ghost prevention, then ALWAYS persist so Redis stays clean
+        const reaped = s.engine.reapStaleTracks();
+        const ghosted = s.engine.pruneGhostTracks();
+        if (reaped > 0 || ghosted > 0) {
+          console.log(`[MAINTENANCE] Reaped ${reaped} stale + ${ghosted} ghost tracks, persisting.`);
+        }
+        await persistTargets();
+      } catch (err) {
+        console.warn('[MAINTENANCE] Error:', err);
+      }
+    }).catch((err) => console.warn('[MAINTENANCE] Lock error:', err));
   }, MAINTENANCE_INTERVAL_MS);
 
   console.log(`[V3_TICKER] Position ticker started — ${TICK_INTERVAL_MS}ms interval`);

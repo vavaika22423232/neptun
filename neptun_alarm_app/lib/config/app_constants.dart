@@ -21,8 +21,10 @@ class AppConstants {
   // ===== Таймери та інтервали =====
   static const Duration onlineCheckInterval = Duration(seconds: 30);
 
-  /// Як на сайті (`PRESENCE_INTERVAL` у nextjs) — рідкі пінги Redis presence.
+  /// Як на сайті (`PRESENCE_INTERVAL`) — активний додаток.
   static const Duration presencePingInterval = Duration(minutes: 5);
+  /// Додаток у фоні — рідший пінг, але сесія лишається в «онлайн».
+  static const Duration presenceBackgroundPingInterval = Duration(minutes: 2);
 
   static const Duration alarmCheckInterval = Duration(minutes: 1);
   static const Duration chatRefreshInterval = Duration(seconds: 10);

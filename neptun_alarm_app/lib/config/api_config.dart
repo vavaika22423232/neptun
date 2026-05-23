@@ -34,6 +34,7 @@ class ApiConfig {
   static const String chatReportEndpoint = '/api/chat/report';
   static const String dataEndpoint = '/data';
   static const String registerEndpoint = '/api/register-device';
+  static const String devicePreferencesEndpoint = '/api/devices/preferences';
   static const String testNotificationEndpoint = '/api/test-notification';
   static const String threatsEndpoint = '/api/threats';
   static const String feedbackEndpoint = '/api/feedback';
@@ -82,6 +83,7 @@ class ApiConfig {
   static String get chatReport => '$baseUrl$chatReportEndpoint';
   static String get data => '$baseUrl$dataEndpoint';
   static String get register => '$baseUrl$registerEndpoint';
+  static String get devicePreferences => '$baseUrl$devicePreferencesEndpoint';
   static String get testNotification => '$baseUrl$testNotificationEndpoint';
   static String get threats => '$baseUrl$threatsEndpoint';
   static String get feedback => '$baseUrl$feedbackEndpoint';

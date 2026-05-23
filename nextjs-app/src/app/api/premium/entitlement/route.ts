@@ -10,16 +10,21 @@ import {
   updateLastVerified,
   ENTITLEMENT_REVERIFY_MS,
 } from '@/lib/premium-entitlement-db';
+import { requireDeviceAuth, requireDeviceAuthFromJson } from '@/lib/device-auth';
+import { getClientIp, ipRedisTag } from '@/lib/client-ip';
+import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
+import { logSecurityEvent } from '@/lib/security-log';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-function sanitizeDeviceId(raw: string | null): string | null {
-  if (!raw || typeof raw !== 'string') return null;
-  const s = raw.trim();
-  if (s.length < 8 || s.length > 200) return null;
-  if (!/^[\w.-]+$/.test(s)) return null;
-  return s;
-}
+const PremiumEntitlementPostSchema = z.object({
+  deviceId: z.string().min(8).max(128).optional(),
+  device_id: z.string().min(8).max(128).optional(),
+  productId: z.string().min(1).max(128),
+  purchaseToken: z.string().min(1).max(8192),
+  source: z.string().max(32).optional(),
+});
 
 function mapAssertToEntitled(r: PremiumAssertResult): boolean {
   return r.kind === 'valid';
@@ -27,13 +32,13 @@ function mapAssertToEntitled(r: PremiumAssertResult): boolean {
 
 /**
  * GET /api/premium/entitlement?deviceId=...
- * Returns whether this device has a server-side Pro binding; re-verifies with Google/Apple if stale.
+ * Legacy entitlement check — requires device JWT.
  */
 export async function GET(request: Request) {
-  const deviceId = sanitizeDeviceId(new URL(request.url).searchParams.get('deviceId'));
-  if (!deviceId) {
-    return NextResponse.json({ error: 'bad_device_id' }, { status: 400 });
-  }
+  const url = new URL(request.url);
+  const auth = requireDeviceAuth(request, url.searchParams.get('deviceId'));
+  if (!auth.ok) return auth.response;
+  const deviceId = auth.deviceId;
 
   try {
     const rec = await getEntitlement(deviceId);
@@ -52,7 +57,7 @@ export async function GET(request: Request) {
     const result = await assertPremiumPurchase(
       rec.productId,
       rec.purchaseToken,
-      rec.source === 'app_store' ? 'app_store' : undefined
+      rec.source === 'app_store' ? 'app_store' : undefined,
     );
 
     if (result.kind === 'valid') {
@@ -61,7 +66,6 @@ export async function GET(request: Request) {
     }
 
     if (result.kind === 'transient' || result.kind === 'misconfigured' || result.kind === 'pending') {
-      // Do not revoke on transient/pending — keep previous good state
       return NextResponse.json({
         entitled: true,
         stale: true,
@@ -83,37 +87,38 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/premium/entitlement
- * Body: { deviceId, productId, purchaseToken, source? }
- * Verifies purchase with store, then stores binding for GET re-checks.
+ * Legacy bind — requires device JWT + rate limit. Prefer v1 purchase verify.
  */
 export async function POST(request: Request) {
-  let body: {
-    deviceId?: string;
-    productId?: string;
-    purchaseToken?: string;
-    source?: string;
-  };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-  }
-
-  const deviceId = sanitizeDeviceId(body.deviceId ?? null);
-  const productId = typeof body.productId === 'string' ? body.productId.trim() : '';
-  const purchaseToken =
-    typeof body.purchaseToken === 'string' ? body.purchaseToken.trim() : '';
-  const source = typeof body.source === 'string' ? body.source.trim() : '';
-
-  if (!deviceId || !productId || !purchaseToken) {
-    return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
+  const ip = getClientIp(request);
+  const allowed = await redisFixedWindowAllow(
+    `rl:legacy:entitlement:${ipRedisTag(ip)}`,
+    20,
+    3600,
+    false,
+  );
+  if (!allowed) {
+    logSecurityEvent('rate_limit_hit', { route: 'legacy_premium_entitlement' });
+    return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
   }
 
   try {
+    const body = await request.json();
+    const auth = await requireDeviceAuthFromJson(request, body);
+    if (!auth.ok) return auth.response;
+    const deviceId = auth.deviceId;
+
+    const parsed = PremiumEntitlementPostSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
+    }
+
+    const { productId, purchaseToken, source } = parsed.data;
+
     const result = await assertPremiumPurchase(
       productId,
       purchaseToken,
-      source === 'app_store' ? 'app_store' : undefined
+      source === 'app_store' ? 'app_store' : undefined,
     );
 
     if (result.kind === 'misconfigured') {
@@ -125,7 +130,7 @@ export async function POST(request: Request) {
     if (result.kind === 'pending') {
       return NextResponse.json({ ok: false, pending: true }, { status: 200 });
     }
-    if (result.kind !== 'valid') {
+    if (!mapAssertToEntitled(result)) {
       return NextResponse.json({ ok: false, entitled: false }, { status: 200 });
     }
 

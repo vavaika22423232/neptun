@@ -112,6 +112,12 @@ export async function fetchAndCacheAlarms(): Promise<boolean> {
         lastETag = etag;
         broadcastSSE({ type: 'alarm_update', data });
         console.log(`[ALARM-BG] Cached ${data.length} alarms in Redis (changed, attempt ${attempt + 1})`);
+        try {
+          const { recordAlarmSnapshotDiff } = await import('@/lib/monetization/alert-history-store');
+          await recordAlarmSnapshotDiff(data as import('@/types').Alarm[]);
+        } catch (histErr) {
+          console.warn('[ALARM-BG] Alert history record failed:', histErr);
+        }
       }
 
       return true;

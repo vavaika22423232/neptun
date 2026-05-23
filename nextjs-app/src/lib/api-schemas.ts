@@ -96,7 +96,8 @@ export const ChatSendSchema = z.object({
 
 export const ChatModeratorBanUserSchema = z.object({
   nickname: z.string().max(64).optional(),
-  deviceId: z.string().min(1).max(128),
+  /** Legacy field; moderator identity comes from JWT or admin session. */
+  deviceId: z.string().max(128).optional(),
   targetDeviceId: z.string().max(128).optional(),
   reason: z.string().max(500).optional(),
 }).refine(
@@ -134,6 +135,15 @@ export const AuthTokenSchema = z.object({
   nickname: z.string().max(64).nullable().optional(),
 });
 
+export const FeedbackPostSchema = z.object({
+  message: z.string().min(5).max(2000),
+  type: z.enum(['general', 'bug', 'suggestion']).optional().default('general'),
+  device_id: z.string().min(8).max(128).optional().default(''),
+  device: z.string().max(128).optional().default(''),
+  app_version: z.string().max(32).optional().default(''),
+  regions: z.array(z.string().max(64)).max(30).optional().default([]),
+});
+
 export const RegisterDeviceSchema = z.object({
   token: z.string().max(512).optional().default(''),
   regions: z.array(z.string().max(128)).max(100).optional().default([]),
@@ -142,6 +152,43 @@ export const RegisterDeviceSchema = z.object({
   device_id: z.string().min(1).max(128),
   platform: z.string().max(32).optional().default('unknown'),
   enabled: z.boolean().optional().default(true),
+});
+
+export const ChatRegisterNicknameSchema = z.object({
+  nickname: z.string().min(2).max(20),
+  deviceId: z.string().min(8).max(128).optional(),
+  hardwareId: z.string().max(128).optional(),
+});
+
+export const ChatReportSchema = z.object({
+  messageId: z.string().min(1).max(128),
+  reason: z.string().min(2).max(500),
+  originalText: z.string().max(2000).optional(),
+  reportedDeviceId: z.string().max(128).optional(),
+  reportedNickname: z.string().max(64).optional(),
+});
+
+export const FeedbackDeviceActionSchema = z.object({
+  device_id: z.string().min(8).max(128).optional(),
+  deviceId: z.string().min(8).max(128).optional(),
+});
+
+export const FeedbackRespondSchema = z.object({
+  message: z.string().min(1).max(2000),
+  author: z.enum(['admin', 'user']).optional().default('user'),
+  device_id: z.string().min(8).max(128).optional(),
+  deviceId: z.string().min(8).max(128).optional(),
+});
+
+export const PresencePingSchema = z.object({
+  id: z.string().min(4).max(128),
+  platform: z.enum(['web', 'app', 'android', 'ios']).optional().default('web'),
+});
+
+export const LegacyVerifyPurchaseSchema = z.object({
+  productId: z.string().min(1).max(128),
+  purchaseToken: z.string().min(1).max(8192),
+  source: z.string().max(32).optional(),
 });
 
 export const ImageUploadMagicBytes: Record<string, number[]> = {

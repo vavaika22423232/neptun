@@ -228,6 +228,14 @@ export function resolveStatedOblastHasc(marker: Record<string, unknown>): string
 export function normalizeIngestMarkerRegionCoords(marker: Record<string, unknown>): void {
   if (marker.manual === true) return;
 
+  // Predictive markers (e.g., approach paths) can validly cross oblast boundaries.
+  // Do not snap them to the destination centroid.
+  const rs = typeof marker.resolve_status === 'string' ? marker.resolve_status : '';
+  const pm = typeof marker.placement_mode === 'string' ? marker.placement_mode : '';
+  if (rs === 'trajectory_approach' || pm.startsWith('target_only') || pm === 'predictive') {
+    return;
+  }
+
   const stated = resolveStatedOblastHasc(marker);
   if (!stated) return;
 
@@ -243,7 +251,7 @@ export function normalizeIngestMarkerRegionCoords(marker: Record<string, unknown
   if (!centroid) return;
 
   console.warn(
-    `[REGION_CHECK] Stated ${stated} but coords in ${atPoint ?? 'unknown'} — snapping to oblast centroid`,
+    `[REGION_CHECK] Stated ${stated} but coords in ${atPoint ?? 'unknown'} (${lat}, ${lng}) — snapping to oblast centroid`,
   );
 
   marker.lat = centroid.lat;

@@ -2,11 +2,11 @@
 
 import React, { useMemo, useState, useEffect, type ReactNode } from 'react';
 import type { Marker, Alarm, BallisticThreat, PresenceData } from '@/types';
-import type { MapBasemapKind } from '@/lib/map-leaflet-performance';
-import { UNITED24_DONATE_URL, COME_BACK_ALIVE_DONATE_URL, TELEGRAM_CHANNEL_URL } from '@/lib/constants';
+import { UNITED24_DONATE_URL, COME_BACK_ALIVE_DONATE_URL } from '@/lib/constants';
 import BottomBar from './BottomBar';
 import ThreatFeedDrawer from './ThreatFeedDrawer';
-import MapLayersControl from './MapLayersControl';
+import PlaceSearch from './PlaceSearch';
+import TelegramBanner from './TelegramBanner';
 
 interface AppShellProps {
   markers: Marker[];
@@ -17,11 +17,9 @@ interface AppShellProps {
   onFaq: () => void;
   onToggleUkraineOnly: () => void;
   ukraineOnly: boolean;
-  basemap?: MapBasemapKind;
-  onBasemapChange?: (b: MapBasemapKind) => void;
-  trackingActive?: boolean;
-  onToggleTracking?: () => void;
   lastUpdateMs?: number;
+  initialPlaceQuery?: string;
+  onPlaceQueryConsumed?: () => void;
   children: React.ReactNode;
 }
 
@@ -48,9 +46,6 @@ const MENU_ITEMS = [
 
 const itemCls =
   'flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-[13px] font-semibold text-[var(--hud-text)] transition-colors hover:bg-[var(--hud-hover)] active:bg-[var(--hud-active)]';
-
-const telegramIconPath =
-  'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z';
 
 function runThemeToggle() {
   const root = document.documentElement;
@@ -97,11 +92,9 @@ export default function AppShell({
   onFaq,
   onToggleUkraineOnly,
   ukraineOnly,
-  basemap,
-  onBasemapChange,
-  trackingActive,
-  onToggleTracking,
   lastUpdateMs,
+  initialPlaceQuery,
+  onPlaceQueryConsumed,
   children,
 }: AppShellProps) {
   const activeAlarms = useMemo(() => alarms.filter(a => a.activeAlerts?.length > 0).length, [alarms]);
@@ -153,73 +146,35 @@ export default function AppShell({
       {/* HUD layer */}
       <div className="pointer-events-none absolute inset-0 z-[2000]">
         
-        {/* Top row: Telegram + Lock-on + Layers + Menu */}
-        <div className="pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-[2460] flex items-stretch justify-end gap-2 sm:right-4 sm:top-4 sm:left-auto sm:w-fit">
-          
-          {/* ── Telegram CTA ─────────────────────────────── */}
-          <a
-            href={TELEGRAM_CHANNEL_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Telegram-канал NEPTUN"
-            title="Telegram-канал NEPTUN"
-            className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-[color:var(--hud-border)] bg-[#0088cc] px-4 text-white shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-all hover:bg-[#0099e6] hover:scale-[1.03] active:scale-[0.98] sm:h-10"
-          >
-            <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] shrink-0" fill="currentColor" aria-hidden>
-              <path d={telegramIconPath} />
-            </svg>
-            <span className="hidden text-[12px] font-bold tracking-tight lg:inline">ХЛОПЦІ ПИШУТЬ В TELEGRAM</span>
-            <span className="text-[12px] font-bold tracking-tight lg:hidden">TELEGRAM</span>
-          </a>
-
-          {/* ── Tracking Lock-on ─────────────────────── */}
-          {onToggleTracking && markers.length > 0 && (
+        {/* Top: пошук — Telegram — меню */}
+        <div className="neptun-top-hud pointer-events-auto absolute inset-x-3 top-[calc(env(safe-area-inset-top,0px)+0.5rem)] z-[2460] sm:top-4">
+          <div className="neptun-top-hud__search">
+            <PlaceSearch
+              alarms={alarms}
+              className="w-full"
+              initialQuery={initialPlaceQuery}
+              onQueryConsumed={onPlaceQueryConsumed}
+            />
+          </div>
+          <div className="neptun-top-hud__actions">
+            <TelegramBanner />
             <button
               type="button"
-              onClick={onToggleTracking}
-              className={`flex h-11 shrink-0 items-center gap-2 rounded-full border border-[color:var(--hud-border)] px-4 text-[12px] font-bold tracking-tight shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-all active:scale-95 sm:h-10 ${
-                trackingActive 
-                  ? 'bg-[var(--hud-danger-bg)] text-[var(--hud-danger)] ring-1 ring-[var(--hud-danger)]/50 hover:bg-[var(--hud-danger-bg)]/80' 
-                  : 'bg-[var(--hud-surface)] text-[var(--hud-text)] hover:bg-[var(--hud-hover)]'
-              }`}
-              title={trackingActive ? 'Вимкнути слідкування' : 'Увімкнути слідкування за ціллю'}
+              aria-label="Меню"
+              aria-expanded={menuOpen}
+              aria-controls="neptun-hud-drawer"
+              onClick={() => setMenuOpen(v => !v)}
+              className="neptun-top-hud__menu hud-top-icon-btn cinematic-button"
             >
-              <div className="relative flex items-center justify-center">
-                <svg viewBox="0 0 24 24" fill="none" className={`h-4 w-4 ${trackingActive ? 'animate-pulse' : ''}`} aria-hidden>
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-                  <circle cx="12" cy="12" r="3" fill={trackingActive ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </div>
-              <span className="hidden sm:inline">{trackingActive ? 'СЛІДКУЮ' : 'СЛІДКУВАТИ'}</span>
-              {!trackingActive && <span className="sm:hidden">LOCK</span>}
-              {trackingActive && <span className="sm:hidden">ON</span>}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+                {menuOpen ? (
+                  <path d="M18 6 6 18M6 6l12 12" />
+                ) : (
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
             </button>
-          )}
-
-          {basemap && onBasemapChange && (
-            <MapLayersControl
-              basemap={basemap}
-              onChange={onBasemapChange}
-            />
-          )}
-
-          <button
-            type="button"
-            aria-label="Меню"
-            aria-expanded={menuOpen}
-            aria-controls="neptun-hud-drawer"
-            onClick={() => setMenuOpen(v => !v)}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[color:var(--hud-border)] bg-[var(--hud-surface)] text-[var(--hud-text)] shadow-[var(--hud-shadow)] backdrop-blur-2xl transition-colors hover:bg-[var(--hud-hover)] active:bg-[var(--hud-active)] sm:h-10 sm:w-10"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
-              {menuOpen ? (
-                <path d="M18 6 6 18M6 6l12 12" />
-              ) : (
-                <path d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
+          </div>
         </div>
 
         {menuOpen ? (

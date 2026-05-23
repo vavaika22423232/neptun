@@ -21,6 +21,11 @@ import { requireAdminAuth } from '@/lib/admin/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
+function increment(bucket: Record<string, number>, key: unknown): void {
+  const normalized = String(key || 'unknown');
+  bucket[normalized] = (bucket[normalized] || 0) + 1;
+}
+
 export async function GET() {
   const denied = await requireAdminAuth();
   if (denied) return denied;
@@ -92,6 +97,46 @@ export async function GET() {
   // Coastal transitions
   const coastalTransitions = active.filter((r) => r.coastal_transition === true).length;
 
+  const byObservationQuality: Record<string, number> = {};
+  const byTextIntent: Record<string, number> = {};
+  const associationReasons: Record<string, number> = {};
+  const publicPositionPolicies: Record<string, number> = {};
+  const coordinateRoles: Record<string, number> = {};
+  const associationScores: number[] = [];
+  const uncertaintyValues: number[] = [];
+  let targetHintTracks = 0;
+  let groupIntentTracks = 0;
+  let lossIntentTracks = 0;
+  let heldPositionTracks = 0;
+  let qualityPenaltyEvents = 0;
+  let groupBonusEvents = 0;
+
+  for (const r of active) {
+    increment(byObservationQuality, r.last_observation_quality || r.position_source || r.resolve_status);
+    increment(byTextIntent, r.last_text_intent);
+    const truth = r.tracker_truth as Record<string, unknown> | undefined;
+    increment(publicPositionPolicies, truth?.public_position_policy);
+    increment(coordinateRoles, truth?.coordinate_role);
+    if (typeof truth?.confidence_radius_km === 'number') uncertaintyValues.push(truth.confidence_radius_km);
+    if (r.last_observation_quality === 'target_hint') targetHintTracks += 1;
+    if (r.last_text_intent === 'group') groupIntentTracks += 1;
+    if (r.last_text_intent === 'loss') lossIntentTracks += 1;
+    if (r.association_reason === 'associated_position_held') heldPositionTracks += 1;
+    const assoc = r.last_association as Record<string, unknown> | undefined;
+    if (assoc) {
+      increment(associationReasons, assoc.reason);
+      if (typeof assoc.score === 'number') associationScores.push(assoc.score);
+      if (typeof assoc.quality_penalty === 'number' && assoc.quality_penalty > 0) qualityPenaltyEvents += 1;
+      if (typeof assoc.group_bonus === 'number' && assoc.group_bonus > 0) groupBonusEvents += 1;
+    }
+  }
+  const avgAssociationScore = associationScores.length > 0
+    ? Math.round((associationScores.reduce((s, v) => s + v, 0) / associationScores.length) * 10) / 10
+    : null;
+  const avgUncertaintyKm = uncertaintyValues.length > 0
+    ? Math.round((uncertaintyValues.reduce((s, v) => s + v, 0) / uncertaintyValues.length) * 10) / 10
+    : null;
+
   // Age distribution
   const ages = active.map((r) => nowMs - (r.last_update_epoch as number || nowMs));
   const avgAgeMs = ages.length > 0 ? Math.round(ages.reduce((s, v) => s + v, 0) / ages.length) : null;
@@ -111,6 +156,19 @@ export async function GET() {
     maneuver_active: maneuverActive,
     cross_oblast_wave_tracks: crossOblastTracks,
     coastal_transitions: coastalTransitions,
+    by_observation_quality: byObservationQuality,
+    by_text_intent: byTextIntent,
+    by_public_position_policy: publicPositionPolicies,
+    by_coordinate_role: coordinateRoles,
+    target_hint_tracks: targetHintTracks,
+    group_intent_tracks: groupIntentTracks,
+    loss_intent_tracks: lossIntentTracks,
+    held_position_tracks: heldPositionTracks,
+    avg_association_score: avgAssociationScore,
+    avg_uncertainty_km: avgUncertaintyKm,
+    association_reason_counts: associationReasons,
+    quality_penalty_events: qualityPenaltyEvents,
+    group_bonus_events: groupBonusEvents,
     avg_age_ms: avgAgeMs,
   });
 }

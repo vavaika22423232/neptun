@@ -40,6 +40,13 @@ const TRACK_LABELS: Record<string, string> = {
   split_candidate: 'Потрібне підтвердження',
 };
 
+const QUALITY_LABELS: Record<string, string> = {
+  observed: 'фіксація',
+  estimated: 'оцінка',
+  coarse: 'район',
+  target_hint: 'курс/ціль',
+};
+
 /**
  * HTML для MapLibre.Popup (адмін-кнопки на window.__admin*).
  * Класи `.neptun-popup-card*` — у `globals.css`.
@@ -66,12 +73,15 @@ export function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser
   const estimatedPill = marker.position_estimated
     ? `<span class="neptun-popup-card__pill neptun-popup-card__pill--estimated">~ Позиція</span>`
     : '';
+  const qualityPill = marker.last_observation_quality
+    ? `<span class="neptun-popup-card__pill neptun-popup-card__pill--estimated">${QUALITY_LABELS[marker.last_observation_quality] || marker.last_observation_quality}</span>`
+    : '';
 
   const statusRow =
     trackState && stateLabel
       ? `<div class="neptun-popup-card__status-row">
           <span class="neptun-popup-card__pill neptun-popup-card__pill--${stateSeg}">${stateLabel}${confidenceFrag}</span>
-          ${loiteringPill}${estimatedPill}
+          ${loiteringPill}${estimatedPill}${qualityPill}
         </div>`
       : '';
 
@@ -90,6 +100,14 @@ export function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser
     ? `<div class="neptun-popup-card__row">
         <span class="neptun-popup-card__row-label">Курс</span>
         <span class="neptun-popup-card__row-value">${Math.round(brg)}°</span>
+      </div>`
+    : '';
+
+  const truth = marker.tracker_truth;
+  const uncertaintyRow = truth?.confidence_radius_km != null
+    ? `<div class="neptun-popup-card__row">
+        <span class="neptun-popup-card__row-label">Точність</span>
+        <span class="neptun-popup-card__row-value">±${Math.round(truth.confidence_radius_km)} км</span>
       </div>`
     : '';
 
@@ -120,6 +138,7 @@ export function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser
       </div>`;
   }
 
+
   return `<article class="neptun-popup-card">
       ${trustBlock}
       <div class="neptun-popup-card__main">
@@ -129,6 +148,7 @@ export function buildMarkerPopup(marker: Marker, threatType: string, isAdminUser
         </header>
         ${statusRow}
         ${courseRow}
+        ${uncertaintyRow}
         ${etaRow}
         ${dateRow}
       </div>

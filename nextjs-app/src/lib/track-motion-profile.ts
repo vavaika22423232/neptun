@@ -33,10 +33,10 @@ const MISSILE_PROFILE: TrackMotionProfile = {
   nominalSpeedKmh: 850,
   maxSpeedKmh: 1200,
   observedFreshMs: 35_000,
-  extrapolateMs: 4 * 60_000,
-  staleMs: 7 * 60_000,
-  lostMs: 10 * 60_000,
-  confidenceHalfLifeMs: 4 * 60_000,
+  extrapolateMs: 10 * 60_000,
+  staleMs: 15 * 60_000,
+  lostMs: 30 * 60_000,
+  confidenceHalfLifeMs: 6 * 60_000,
   targetStopKm: 12,
   ekfProcessNoise: 5e-5,    // Cruise missiles can maneuver significantly
   ekfMeasurementNoise: 5e-3, // Higher-precision radar observations
@@ -90,8 +90,8 @@ export const TRACK_MOTION_PROFILES: Record<string, TrackMotionProfile> = {
     maxSpeedKmh: 5000,
     observedFreshMs: 20_000,
     extrapolateMs: 90_000,
-    staleMs: 3 * 60_000,
-    lostMs: 5 * 60_000,
+    staleMs: 4 * 60_000,
+    lostMs: 8 * 60_000,
     confidenceHalfLifeMs: 75_000,
     targetStopKm: 20,
     ekfProcessNoise: 1e-6,    // Ballistic: near-deterministic parabolic arc

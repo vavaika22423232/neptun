@@ -106,7 +106,9 @@ class NeptunWidgetProvider : AppWidgetProvider() {
 
             // Click to open app
             try {
-                val intent = Intent(context, MainActivity::class.java)
+                val intent = Intent(context, MainActivity::class.java).apply {
+                    data = android.net.Uri.parse("neptun://alarm?open=radar")
+                }
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 val pendingIntent = PendingIntent.getActivity(
                     context, 0, intent,

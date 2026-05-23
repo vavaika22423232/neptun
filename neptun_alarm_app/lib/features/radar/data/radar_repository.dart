@@ -5,10 +5,30 @@ import 'package:http/http.dart' as http;
 
 import '../../../config/api_config.dart';
 import '../domain/radar_snapshot.dart';
+import 'radar_snapshot_cache.dart';
 
 /// REST для вкладки «Радар» ([ApiConfig.threats], [ApiConfig.alarmStatus]).
 class RadarRepository {
+  RadarRepository({RadarSnapshotCache? cache})
+      : _cache = cache ?? RadarSnapshotCache();
+
+  final RadarSnapshotCache _cache;
+
   Future<RadarSnapshot> fetchSnapshot({required int historyMinutes}) async {
+    try {
+      final snap = await _fetchFromNetwork(historyMinutes: historyMinutes);
+      await _cache.save(snap);
+      return snap;
+    } catch (_) {
+      final cached = await _cache.load();
+      if (cached != null) return cached;
+      rethrow;
+    }
+  }
+
+  Future<RadarSnapshot> _fetchFromNetwork({
+    required int historyMinutes,
+  }) async {
     final threatsUrl = '${ApiConfig.threats}?timeRange=$historyMinutes';
 
     final responses = await Future.wait([
@@ -18,7 +38,10 @@ class RadarRepository {
 
     List<Map<String, dynamic>> markers = [];
     if (responses[0].statusCode == 200) {
-      markers = parseThreatsEnvelope(jsonDecode(responses[0].body));
+      final raw = parseThreatsEnvelope(jsonDecode(responses[0].body));
+      markers = raw.map(normalizeThreatMarker).toList();
+    } else if (responses[0].statusCode != 200) {
+      throw Exception('threats HTTP ${responses[0].statusCode}');
     }
 
     var active = 0;
@@ -33,6 +56,24 @@ class RadarRepository {
       activeOblastsUnderAlarm: active,
       fetchedAt: DateTime.now(),
     );
+  }
+
+  /// Нормалізація V10 полів API для UI.
+  @visibleForTesting
+  static Map<String, dynamic> normalizeThreatMarker(Map<String, dynamic> raw) {
+    final m = Map<String, dynamic>.from(raw);
+    final pi = m['predicted_impact'] ?? m['predictedImpact'];
+    if (pi is Map) {
+      m['predicted_impact'] = Map<String, dynamic>.from(pi);
+    }
+    m['track_quality_score'] ??=
+        m['trackQualityScore'] ?? m['quality_score'] ?? m['qualityScore'];
+    m['formation_id'] ??= m['formationId'] ?? m['wave_id'] ?? m['waveId'];
+    if (m['maneuver_detected'] == null) {
+      m['maneuver_detected'] = m['maneuverDetected'] == true;
+    }
+    m['impact_zone_km'] ??= m['impactZoneKm'];
+    return m;
   }
 
   /// Для юніт-тестів (формат тіла `/api/threats`).

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/di/service_locator.dart';
+import '../../core/router/route_paths.dart';
 import '../../services/moderator_service.dart';
 import '../../services/purchase_service.dart';
 import '../../config/app_constants.dart';
@@ -114,7 +115,7 @@ class _ProfileTabState extends State<ProfileTab>
                 icon: Icons.location_on_rounded,
                 label: 'Регіони сповіщень',
                 subtitle: 'Обрати область чи район для тривог',
-                onTap: () => context.go('/regions'),
+                onTap: () => context.push(RoutePaths.alerts),
               ),
               ProfileNavTile(
                 icon: Icons.history_rounded,

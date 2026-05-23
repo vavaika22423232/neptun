@@ -77,6 +77,14 @@ CREATE TABLE IF NOT EXISTS channel_priors (
   last_seen TEXT,
   PRIMARY KEY (channel, oblast)
 );
+
+-- Optional FTS for UI place search (rebuilt in ensure_places_fts).
+CREATE VIRTUAL TABLE IF NOT EXISTS places_fts USING fts5(
+  name_uk,
+  name_norm,
+  oblast_uk,
+  tokenize='unicode61'
+);
 """
 
 # ─── Comprehensive Ukrainian settlements dataset ────────────────────────────
@@ -221,6 +229,15 @@ SETTLEMENTS = [
     ("Соледар", "Донецька область", "Бахмутський", 48.6956, 38.1017, "місто", 10000),
     ("Часів Яр", "Донецька область", "Бахмутський", 48.8386, 37.8382, "місто", 12000),
     ("Сіверськ", "Донецька область", "Краматорський", 48.8667, 38.0833, "місто", 10000),
+    ("Горлівка", "Донецька область", "Горлівський", 48.3375, 38.0573, "місто", 239828),
+    ("Макіївка", "Донецька область", "Макіївський", 48.0478, 37.9258, "місто", 340601),
+    ("Єнакієве", "Донецька область", "Горлівський", 48.2305, 38.1850, "місто", 76673),
+    ("Сніжне", "Донецька область", "Горлівський", 48.0221, 38.7635, "місто", 45398),
+    ("Дружківка", "Донецька область", "Краматорський", 48.6199, 37.5250, "місто", 55947),
+    ("Жданівка", "Донецька область", "Горлівський", 48.1570, 38.2565, "місто", 13000),
+    ("Алчевськ", "Луганська область", "Алчевський", 48.4702, 38.8010, "місто", 106713),
+    ("Стаханов", "Луганська область", "Алчевський", 48.5683, 38.6436, "місто", 76896),
+    ("Ровеньки", "Луганська область", "Сватівський", 48.0711, 39.3772, "місто", 47790),
     # ── Луганська область ──
     ("Луганськ", "Луганська область", None, 48.5740, 39.3078, "місто", 399559),
     ("Сєвєродонецьк", "Луганська область", "Сєвєродонецький", 48.9500, 38.4833, "місто", 101135),
@@ -438,10 +455,41 @@ ALIAS_MAP = {
     "соледар": "Соледар", "северск": "Сіверськ",
     "часів яр": "Часів Яр", "часов яр": "Часів Яр",
     "вольнянск": "Вільнянськ", "вольнянськ": "Вільнянськ",
+    "горловка": "Горлівка", "горлівка": "Горлівка",
+    "каменское": "Кам'янське", "камянське": "Кам'янське", "камянское": "Кам'янське",
+    "макеевка": "Макіївка", "макіївка": "Макіївка",
+    "алчевск": "Алчевськ", "алчевськ": "Алчевськ",
+    "енакиево": "Єнакієве", "єнакієве": "Єнакієве",
+    "снежное": "Сніжне", "сніжне": "Сніжне",
+    "дружковка": "Дружківка", "дружківка": "Дружківка",
+    "ждановка": "Жданівка", "жданівка": "Жданівка",
+    "красный лиман": "Лиман", "красний лиман": "Лиман",
+    "ильичевск": "Чорноморськ", "черноморск": "Чорноморськ",
+    "chornomorsk": "Чорноморськ",
 }
 
 # Ukrainian declension suffixes for alias generation
 UK_SUFFIXES = ['а', 'у', 'і', 'ом', 'ів', 'ам', 'и', 'ою', 'ю', 'е', 'ей']
+
+_APOSTROPHE_RE = re.compile(r"[''ʼ`´’]")
+
+
+def _compact_name(s: str) -> str:
+    return _APOSTROPHE_RE.sub('', s.lower()).strip()
+
+
+def ensure_places_fts(conn: sqlite3.Connection) -> None:
+    """Rebuild FTS5 index for public place search API."""
+    conn.execute("DELETE FROM places_fts")
+    conn.executemany(
+        "INSERT INTO places_fts(rowid, name_uk, name_norm, oblast_uk) VALUES (?,?,?,?)",
+        [
+            (row[0], row[1], row[2], row[3])
+            for row in conn.execute(
+                "SELECT id, name, name_lower, oblast FROM places"
+            ).fetchall()
+        ],
+    )
 
 
 def build_db(db_path: str = DB_PATH):
@@ -481,6 +529,15 @@ def build_db(db_path: str = DB_PATH):
                     (alias, pid),
                 )
 
+    # Apostrophe-less spellings (Камянське → Кам'янське)
+    for pid, name, name_lower in rows:
+        compact = _compact_name(name_lower)
+        if compact and compact != name_lower:
+            conn.execute(
+                "INSERT INTO aliases (alias, canonical_id, priority) VALUES (?,?,4)",
+                (compact, pid),
+            )
+
     # Add Russian / translit aliases
     for alias_key, canonical_name in ALIAS_MAP.items():
         row = conn.execute(
@@ -492,6 +549,7 @@ def build_db(db_path: str = DB_PATH):
                 (alias_key.lower(), row[0]),
             )
 
+    ensure_places_fts(conn)
     conn.commit()
     count = conn.execute("SELECT COUNT(*) FROM places").fetchone()[0]
     alias_count = conn.execute("SELECT COUNT(*) FROM aliases").fetchone()[0]
@@ -530,6 +588,7 @@ def build_from_csv(csv_path: str, db_path: str = DB_PATH):
             )
             count += 1
 
+    ensure_places_fts(conn)
     conn.commit()
     conn.close()
     print(f"Imported {count} settlements from CSV into {db_path}")

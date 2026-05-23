@@ -5,13 +5,14 @@ import type { Alarm, FusionTrajectory, Marker, BallisticThreat } from '@/types';
 import { useAlarms } from '@/hooks/useAlarms';
 import { useMarkers } from '@/hooks/useMarkers';
 import { usePresence } from '@/hooks/usePresence';
-import { pickBasemapKind, type MapBasemapKind } from '@/lib/map-leaflet-performance';
+import { pickBasemapKind } from '@/lib/map-leaflet-performance';
 import AppShell from '@/components/AppShell';
 import DonateModal from '@/components/DonateModal';
 import DeploymentScreen from '@/components/DeploymentScreen';
 import SeoInfoSection from '@/components/SeoInfoSection';
 import MapErrorBoundary from '@/components/MapErrorBoundary';
 import MapHost from '@/components/Map/MapHost';
+import { MapControllerProvider } from '@/lib/map/map-controller-context';
 
 export default function HomePageInner({
   isEmbed = false,
@@ -51,14 +52,27 @@ export default function HomePageInner({
   const [faqOpen, setFaqOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [ukraineOnly, setUkraineOnly] = useState(true);
-  const [trackingActive, setTrackingActive] = useState(false);
-  const [focusedTargetId, setFocusedTargetId] = useState<string | null>(null);
-  const [basemap, setBasemap] = useState<MapBasemapKind>(() => pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined));
+  const basemap = useMemo(
+    () => pickBasemapKind(isEmbed, typeof navigator !== 'undefined' ? navigator.userAgent : undefined),
+    [isEmbed],
+  );
+  const [initialPlaceQuery, setInitialPlaceQuery] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    // If tracking is disabled, clear focus
-    if (!trackingActive) setFocusedTargetId(null);
-  }, [trackingActive]);
+    if (typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search).get('q')?.trim();
+    if (q && q.length >= 2) setInitialPlaceQuery(q);
+  }, []);
+
+  const consumePlaceQuery = () => {
+    setInitialPlaceQuery(undefined);
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('q')) return;
+    url.searchParams.delete('q');
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(null, '', next);
+  };
 
   useEffect(() => {
     if (!isEmbed) {
@@ -136,9 +150,6 @@ export default function HomePageInner({
     onMarkerAction: isAdmin ? forceRefreshMarkers : undefined,
     ukraineOnly,
     basemapOverride: basemap,
-    autoTrack: trackingActive,
-    focusedTargetId,
-    onFocusedTargetIdChange: setFocusedTargetId,
   };
 
   if (isEmbed) {
@@ -159,26 +170,26 @@ export default function HomePageInner({
     <>
       <DeploymentScreen />
 
-      <AppShell
-        markers={markers}
-        alarms={alarms}
-        presence={presence}
-        ballisticThreat={ballisticThreat}
-        onDonate={() => setDonateOpen(true)}
-        onFaq={() => setFaqOpen(true)}
-        onToggleUkraineOnly={() => setUkraineOnly((value) => !value)}
-        ukraineOnly={ukraineOnly}
-        basemap={basemap}
-        onBasemapChange={setBasemap}
-        trackingActive={trackingActive}
-        onToggleTracking={() => setTrackingActive(v => !v)}
-      >
-        <div id="map-container" className="isolate h-full w-full">
-          <MapErrorBoundary>
-            <MapHost {...mapProps} />
-          </MapErrorBoundary>
-        </div>
-      </AppShell>
+      <MapControllerProvider>
+        <AppShell
+          markers={markers}
+          alarms={alarms}
+          presence={presence}
+          ballisticThreat={ballisticThreat}
+          onDonate={() => setDonateOpen(true)}
+          onFaq={() => setFaqOpen(true)}
+          onToggleUkraineOnly={() => setUkraineOnly((value) => !value)}
+          ukraineOnly={ukraineOnly}
+          initialPlaceQuery={initialPlaceQuery}
+          onPlaceQueryConsumed={consumePlaceQuery}
+        >
+          <div id="map-container" className="isolate h-full w-full">
+            <MapErrorBoundary>
+              <MapHost {...mapProps} />
+            </MapErrorBoundary>
+          </div>
+        </AppShell>
+      </MapControllerProvider>
 
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
 

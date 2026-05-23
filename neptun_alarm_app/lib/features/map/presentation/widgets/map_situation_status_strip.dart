@@ -7,8 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/router/route_paths.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/providers/api_reachability_provider.dart';
-import '../../../../core/widgets/neptun_overlay_insets.dart';
 import '../../../../design/design_exports.dart';
+import '../../../../pages/app_shell.dart';
 import '../../../../services/data_stream_service.dart';
 import '../../domain/map_realtime_link_status.dart';
 
@@ -52,7 +52,9 @@ class _MapSituationStatusBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final top = neptunContentTopPadding(context);
+    final top = MediaQuery.paddingOf(context).top +
+        AppShellState.chromeHeight +
+        AppShellState.contentTopGap;
     final h = NeptunSpacing.screenHorizontal;
 
             final subtitle = _buildSubtitle();

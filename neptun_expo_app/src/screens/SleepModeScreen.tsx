@@ -9,8 +9,10 @@ import {
   saveSleepModeSettings,
   type SleepModeSettings,
 } from '../services/sleepModeStore';
+import { palette } from '../design/tokens';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { useLegacyScreenStyles } from '../theme/useLegacyScreenStyles';
 
 function clampInt(text: string, max: number): number {
   const n = Number(text.replace(/[^\d]/g, ''));
@@ -23,6 +25,7 @@ function fmtHm(h: number, m: number): string {
 }
 
 export function SleepModeScreen() {
+  const styles = useScreenStyles();
   const [s, setS] = useState<SleepModeSettings>(getSleepModeCached());
   const [startH, setStartH] = useState(String(s.startHour));
   const [startM, setStartM] = useState(String(s.startMinute));
@@ -73,8 +76,8 @@ export function SleepModeScreen() {
             setS((p) => ({ ...p, enabled: v }));
             void saveSleepModeSettings({ enabled: v }).then(reload);
           }}
-          trackColor={{ false: colors.border, true: colors.premium + '88' }}
-          thumbColor={s.enabled ? colors.premium : colors.muted}
+          trackColor={{ false: palette.border, true: palette.premiumMuted }}
+          thumbColor={s.enabled ? palette.premium : palette.textFaint}
         />
       </Card>
 
@@ -187,6 +190,7 @@ function SleepToggleRow({
   onChange: (v: boolean) => void;
   topBorder?: boolean;
 }) {
+  const styles = useScreenStyles();
   return (
     <View style={[styles.toggleRow, !topBorder && styles.toggleRowFirst]}>
       <Text style={styles.toggleLbl}>{label}</Text>
@@ -200,8 +204,10 @@ function SleepToggleRow({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+
+function useScreenStyles() {
+  return useLegacyScreenStyles((c) => ({
+  root: { flex: 1, backgroundColor: c.bg },
   pad: { padding: 16, gap: 14, paddingBottom: 40 },
   intro: { fontSize: 13, lineHeight: 19, marginBottom: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -216,20 +222,20 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderColor: c.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: colors.text,
+    color: c.text,
     fontFamily: fonts.semiBold,
     fontSize: 16,
-    backgroundColor: colors.bg2,
+    backgroundColor: c.bg2,
   },
   apply: {
     marginTop: 14,
     fontFamily: fonts.semiBold,
     fontSize: 15,
-    color: colors.accent,
+    color: c.accent,
     textAlign: 'right',
   },
   toggleRow: {
@@ -238,12 +244,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
   },
   toggleRowFirst: {
     borderTopWidth: 0,
   },
-  toggleLbl: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: colors.text, paddingRight: 12 },
+  toggleLbl: { flex: 1, fontFamily: fonts.medium, fontSize: 14, color: c.text, paddingRight: 12 },
   note: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', paddingHorizontal: 4 },
   noteTxt: { flex: 1, fontSize: 12, lineHeight: 17 },
-});
+}));
+}

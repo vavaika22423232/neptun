@@ -191,7 +191,7 @@ function stateAlarmStyle(
   }
   const light = isLightMapTheme();
   return {
-    fillColor: '#8f0000',
+    fillColor: '#630e0e',
     fillOpacity: light ? 0.56 : 0.64,
     color: light ? '#5f0000' : '#b30000',
     opacity: 1,

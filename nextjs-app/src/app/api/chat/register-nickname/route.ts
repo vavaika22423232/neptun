@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { ChatRegisterNicknameSchema } from '@/lib/api-schemas';
 import { containsForbiddenText } from '@/lib/chat-forbidden';
+import { requireDeviceAuthFromJson } from '@/lib/device-auth';
+import { getClientIp, ipRedisTag } from '@/lib/client-ip';
+import { redisFixedWindowAllow } from '@/lib/redis-rate-limit';
+import { logSecurityEvent } from '@/lib/security-log';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const NICKNAMES_FILE = path.join(DATA_DIR, 'chat_nicknames.json');
@@ -34,33 +39,45 @@ function isReservedDisplayNickname(nickname: string): boolean {
 
 /**
  * POST /api/chat/register-nickname
- * Register a nickname for a device.
+ * Register a nickname for the authenticated device.
  */
 export async function POST(request: Request) {
   try {
+    const ip = getClientIp(request);
+    const allowed = await redisFixedWindowAllow(
+      `rl:chat:register_nick:${ipRedisTag(ip)}`,
+      10,
+      3600,
+      false,
+    );
+    if (!allowed) {
+      logSecurityEvent('rate_limit_hit', { route: 'chat_register_nickname' });
+      return NextResponse.json({ success: false, error: 'Забагато спроб' }, { status: 429 });
+    }
+
     const body = await request.json();
-    const { deviceId, hardwareId } = body;
-    const nickname = typeof body.nickname === 'string' ? body.nickname.trim() : '';
-
-    if (!nickname || !deviceId) {
-      return NextResponse.json({ success: false, error: 'Відсутні обов\'язкові поля' });
+    const auth = await requireDeviceAuthFromJson(request, body);
+    if (!auth.ok) {
+      return NextResponse.json({ success: false, error: 'Потрібна авторизація' }, { status: auth.response.status });
     }
 
-    if (nickname.length < 2 || nickname.length > 20) {
-      return NextResponse.json({ success: false, error: 'Нікнейм має бути від 2 до 20 символів' });
+    const parsed = ChatRegisterNicknameSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: 'Невірний нікнейм' }, { status: 400 });
     }
+
+    const { nickname, hardwareId } = parsed.data;
+    const deviceId = auth.deviceId;
 
     if (isReservedDisplayNickname(nickname)) {
       return NextResponse.json({ success: false, error: 'Цей нікнейм зарезервований системою' });
     }
 
-    // Sensitive nickname protection
     const sensitive = ['admin', 'moderator', 'system', 'neptun', 'модератор', 'адмін'];
-    if (sensitive.some(s => nickname.toLowerCase().includes(s))) {
+    if (sensitive.some((s) => nickname.toLowerCase().includes(s))) {
       return NextResponse.json({ success: false, error: 'Нікнейм містить службове слово' });
     }
 
-    // Forbidden word check
     if (containsForbiddenText(nickname)) {
       return NextResponse.json({ success: false, error: 'Неприпустимий нікнейм' });
     }
@@ -72,14 +89,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Нікнейм зайнятий' });
     }
 
-    // Remove old nickname for this device
     const filtered = nicknames.filter((n) => n.device_id !== deviceId);
     const entry: NicknameEntry = {
       nickname,
       device_id: deviceId,
       registered_at: new Date().toISOString(),
     };
-    if (hardwareId && typeof hardwareId === 'string') entry.hardware_id = hardwareId;
+    if (hardwareId) entry.hardware_id = hardwareId;
     filtered.push(entry);
 
     saveNicknames(filtered);

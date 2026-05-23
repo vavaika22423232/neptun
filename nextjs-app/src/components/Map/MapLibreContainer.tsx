@@ -19,16 +19,27 @@ import {
 import { resolveMapRenderProfile } from '@/lib/map/map-render-profile';
 import { markersToGeoJSON, markersToSwarmGeoJSON, maplibreIconId, markerIconUrl } from '@/lib/map/markers-to-geojson';
 import type { ThreatMarkerFeatureCollection } from '@/lib/map/markers-to-geojson';
-import { markersToTrailsGeoJSON } from '@/lib/map/markers-to-trails-geojson';
-import { markersToLaunchGeoJSON } from '@/lib/map/markers-to-launch-geojson';
 import { notifyFlutterThreatMarkerTap } from '@/lib/map/flutter-app-bridge';
 import { resolveThreatBearingDeg } from '@/lib/threat-bearing';
-import { MAP_DAY, MAP_NIGHT } from '@/lib/map/map-visual-tokens';
+import { MAP_DAY, MAP_NIGHT, MAP_ALARM_COLOR } from '@/lib/map/map-visual-tokens';
 import {
   applyThreatMarkerFocus,
 } from '@/lib/map/map-threat-focus';
 import { buildUaRasterBasemapStyle, buildGenericRasterBasemapStyle } from '@/lib/map/ua-raster-maplibre-style';
 import { getBasemapUrl } from '@/lib/map-leaflet-performance';
+import {
+  useMapControllerRegistration,
+  type MapControllerImpl,
+} from '@/lib/map/map-controller-context';
+import { attachMapLifecycleRecovery } from '@/lib/map/map-lifecycle-recovery';
+import {
+  NEPTUN_MAP_GOTO,
+  getLastNeptunMapGoto,
+  parseNeptunMapGotoEvent,
+  runNeptunMapGotoOnMap,
+  setSearchPinOnMap,
+  type NeptunMapGotoDetail,
+} from '@/lib/map/map-goto-bus';
 
 const MAP_BOUNDS = { minLat: 44.2, maxLat: 52.4, minLng: 22.0, maxLng: 40.2 } as const;
 const UKRAINE_ONLY_VIEW_BOUNDS = { minLat: 42.7, maxLat: 53.7, minLng: 19.8, maxLng: 42.4 } as const;
@@ -89,6 +100,14 @@ function getFirstSymbolLayerId(map: maplibregl.Map): string | undefined {
     }
   }
   return undefined;
+}
+
+function safeParseMessage(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function withFilter(baseFilter: unknown, extraFilter: unknown): unknown {
@@ -379,10 +398,6 @@ interface MapLibreContainerProps {
   isEmbed?: boolean;
   ukraineOnly?: boolean;
   basemapOverride?: import('@/lib/map-leaflet-performance').MapBasemapKind;
-  autoTrack?: boolean;
-  focusedTargetId?: string | null;
-  onFocusedTargetIdChange?: (id: string | null) => void;
-  onStartTracking?: (id: string) => void;
 }
 
 function MapLibreContainer({
@@ -394,10 +409,6 @@ function MapLibreContainer({
   isEmbed = false,
   ukraineOnly = false,
   basemapOverride,
-  autoTrack = false,
-  focusedTargetId = null,
-  onFocusedTargetIdChange,
-  onStartTracking,
 }: MapLibreContainerProps) {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -412,9 +423,13 @@ function MapLibreContainer({
   const latestMarkersRef = useRef<Marker[]>([]);
   const markerSyncGenRef = useRef(0);
   const applyAlarmPaintRef = useRef<(alarmsData: Alarm[]) => void>(() => {});
-  const applyBaseStyleRef = useRef<() => void>(() => {});
+  const applyBaseStyleRef = useRef<(opts?: { silent?: boolean }) => void>(() => {});
+  const hardRecoverCooldownRef = useRef(0);
+  const initialUkraineFitDoneRef = useRef(false);
   const rafIdRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [mapEpoch, setMapEpoch] = useState(0);
+  const registerMapController = useMapControllerRegistration();
 
   useEffect(() => {
     latestAlarmsRef.current = alarms;
@@ -454,21 +469,6 @@ function MapLibreContainer({
     }
     applyBaseStyleRef.current();
   }, [ukraineOnly]);
-
-  useEffect(() => {
-    const w = window as unknown as {
-      __startTrackingMarker?: (id: string) => void;
-    };
-    if (onStartTracking) {
-      w.__startTrackingMarker = (id: string) => {
-        popupRef.current?.remove();
-        onStartTracking(id);
-      };
-    }
-    return () => {
-      delete w.__startTrackingMarker;
-    };
-  }, [onStartTracking]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -532,7 +532,16 @@ function MapLibreContainer({
   }, [isAdmin, onMarkerAction]);
 
   useEffect(() => {
-    if (!mapElRef.current || mapRef.current) return;
+    if (!mapElRef.current) return;
+    if (mapRef.current) {
+      try {
+        mapRef.current.remove();
+      } catch {
+        /* ignore */
+      }
+      mapRef.current = null;
+    }
+    initialUkraineFitDoneRef.current = false;
 
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
     const mtp = typeof navigator !== 'undefined' ? navigator.maxTouchPoints : undefined;
@@ -559,7 +568,7 @@ function MapLibreContainer({
     }
     let mobileLibreKick1: number | null = null;
     let mobileLibreKick2: number | null = null;
-    if (isMobile && !isEmbed) {
+    if (isMobile) {
       mobileLibreKick1 = window.setTimeout(mapResize, 300);
       mobileLibreKick2 = window.setTimeout(mapResize, 900);
     }
@@ -761,10 +770,10 @@ function MapLibreContainer({
 
     const basemapOverrideRef = { current: basemapOverride };
 
-    const applyBaseStyle = async () => {
+    const applyBaseStyle = async (opts?: { silent?: boolean }) => {
       const requestSeq = ++(map as any).styleRequestSeq;
       try {
-        setMapReady(false);
+        if (!opts?.silent) setMapReady(false);
         const light = isLightAppTheme();
         const currentBasemapKind = basemapOverrideRef.current || initialBasemapKind;
         const [style, geoData] = await Promise.all([
@@ -785,8 +794,8 @@ function MapLibreContainer({
         setMapReady(true);
       }
     };
-    applyBaseStyleRef.current = () => {
-      void applyBaseStyle();
+    applyBaseStyleRef.current = (opts?: { silent?: boolean }) => {
+      void applyBaseStyle(opts);
     };
     // Expose a way for the basemap-override useEffect to update the ref
     (applyBaseStyleRef as { basemapOverrideRef?: typeof basemapOverrideRef }).basemapOverrideRef = basemapOverrideRef;
@@ -922,7 +931,7 @@ function MapLibreContainer({
           source: 'oblasts',
           filter: ['==', ['get', 'HASC_1'], '__none__'],
           paint: {
-            'fill-color': isLightBasemap ? '#b91c1c' : '#ef4444',
+            'fill-color': MAP_ALARM_COLOR,
             'fill-opacity': 0.26,
           },
         }, firstSymbolId);
@@ -934,7 +943,7 @@ function MapLibreContainer({
           source: 'districts',
           filter: ['==', ['get', 'regionKey'], '__none__'],
           paint: {
-            'fill-color': isLightBasemap ? '#b91c1c' : '#fb7185',
+            'fill-color': MAP_ALARM_COLOR,
             'fill-opacity': isLightBasemap ? 0.30 : 0.34,
           },
         }, firstSymbolId);
@@ -1022,136 +1031,17 @@ function MapLibreContainer({
             source: 'oblasts',
             filter: ['==', ['get', 'HASC_1'], '__none__'],
             paint: {
-              'line-color': isLightBasemap ? '#991b1b' : '#fca5a5',
-              'line-opacity': 0.42,
+              'line-color': MAP_ALARM_COLOR,
+              'line-opacity': 0.55,
               'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.7, 7, 1.35, 10, 1.9],
             },
           },
           firstSymbolId,
         );
       }
-      // ── Launch origin arcs (very faint, behind trails) ───────────────────
-      if (!map.getSource('launch-arcs')) {
-        originalAddSource('launch-arcs', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      }
-      if (!map.getLayer('launch-arc-glow')) {
-        originalAddLayer(
-          {
-            id: 'launch-arc-glow',
-            type: 'line',
-            source: 'launch-arcs',
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-              'line-color': '#f43f5e',
-              'line-opacity': ['*', ['get', 'opacity'], 0.12],
-              'line-width': 8,
-              'line-blur': 5,
-            },
-          },
-          firstSymbolId,
-        );
-      }
-      if (!map.getLayer('launch-arc-line')) {
-        originalAddLayer(
-          {
-            id: 'launch-arc-line',
-            type: 'line',
-            source: 'launch-arcs',
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-              'line-color': '#f43f5e',
-              'line-opacity': ['*', ['get', 'opacity'], 0.45],
-              'line-width': 1.2,
-              'line-dasharray': [4, 5],
-            },
-          },
-          firstSymbolId,
-        );
-      }
-      // Launch site markers (enemy territory origin points)
-      if (!map.getSource('launch-sites')) {
-        originalAddSource('launch-sites', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      }
-      if (!map.getLayer('launch-site-halo')) {
-        originalAddLayer({
-          id: 'launch-site-halo',
-          type: 'circle',
-          source: 'launch-sites',
-          paint: {
-            'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 10, 8, 18],
-            'circle-color': '#f43f5e',
-            'circle-opacity': ['*', ['get', 'opacity'], 0.25],
-            'circle-blur': 0.7,
-          },
-        });
-      }
-      if (!map.getLayer('launch-site-label')) {
-        originalAddLayer({
-          id: 'launch-site-label',
-          type: 'symbol',
-          source: 'launch-sites',
-          layout: {
-            'text-field': ['get', 'shortName'],
-            'text-size': ['interpolate', ['linear'], ['zoom'], 4, 9, 8, 11],
-            'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
-            'text-offset': [0, 0],
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
-          },
-          paint: {
-            'text-color': '#fb7185',
-            'text-halo-color': '#0a0d12',
-            'text-halo-width': 2.0,
-            'text-opacity': ['*', ['get', 'opacity'], 1.2],
-          },
-        });
-      }
-
       // ── Tactical Swarm Grouping (Convex Hulls) ───────────────────────────
       if (!map.getSource('threat-swarms')) {
         originalAddSource('threat-swarms', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      }
-
-      // ── Tracking Reticle ───────────────────────────────────────────────────
-      if (!map.getSource('tracking-reticle')) {
-        originalAddSource('tracking-reticle', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      }
-      if (!map.getLayer('tracking-reticle-ring')) {
-        originalAddLayer({
-          id: 'tracking-reticle-ring',
-          type: 'circle',
-          source: 'tracking-reticle',
-          paint: {
-            'circle-radius': 24,
-            'circle-color': 'transparent',
-            'circle-stroke-width': 2,
-            'circle-stroke-color': '#ef4444',
-            'circle-stroke-opacity': 0.8,
-            'circle-pitch-alignment': 'map'
-          }
-        }, firstSymbolId);
-      }
-      if (!map.getLayer('tracking-reticle-cross')) {
-        originalAddLayer({
-          id: 'tracking-reticle-cross',
-          type: 'symbol',
-          source: 'tracking-reticle',
-          layout: {
-            'text-field': '⌖',
-            'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
-            'text-size': 32,
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
-            'text-anchor': 'center',
-            'symbol-placement': 'point'
-          },
-          paint: {
-            'text-color': '#ef4444',
-            'text-opacity': 0.9,
-            'text-halo-color': 'rgba(15, 15, 15, 0.5)',
-            'text-halo-width': 1
-          }
-        });
       }
 
       if (!map.getLayer('threat-swarm-fill')) {
@@ -1165,23 +1055,7 @@ function MapLibreContainer({
               'fill-opacity': 0.08,
             },
           },
-          'threat-trail-projection'
-        );
-      }
-      if (!map.getLayer('threat-swarm-line')) {
-        originalAddLayer(
-          {
-            id: 'threat-swarm-line',
-            type: 'line',
-            source: 'threat-swarms',
-            paint: {
-              'line-color': '#f43f5e',
-              'line-width': 1.5,
-              'line-dasharray': [4, 4],
-              'line-opacity': 0.3,
-            },
-          },
-          'threat-trail-projection'
+          firstSymbolId,
         );
       }
       if (!map.getLayer('threat-swarm-label')) {
@@ -1206,93 +1080,44 @@ function MapLibreContainer({
           firstSymbolId
         );
       }
-      // ── Threat trail lines (behind markers, zoom ≥ 5.5) ─────────────────
-      if (!map.getSource('threat-trails')) {
-        originalAddSource('threat-trails', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, lineMetrics: true });
-      }
-      // Glow layer — wide semi-transparent duplicate under the trail for depth
-      if (!map.getLayer('threat-trail-glow')) {
-        originalAddLayer(
-          {
-            id: 'threat-trail-glow',
-            type: 'line',
-            source: 'threat-trails',
-            filter: ['==', ['get', 'trail_kind'], 'trail'],
-            minzoom: 5.5,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-              'line-color': ['get', 'trail_color'],
-              'line-opacity': ['*', ['get', 'trail_opacity'], 0.28],
-              'line-width': ['*', ['get', 'trail_width'], 4.5],
-              'line-blur': 3,
-            },
-          },
-          firstSymbolId,
-        );
-      }
-      // Trail line — crisp solid observed path
-      if (!map.getLayer('threat-trail-line')) {
-        originalAddLayer(
-          {
-            id: 'threat-trail-line',
-            type: 'line',
-            source: 'threat-trails',
-            filter: ['==', ['get', 'trail_kind'], 'trail'],
-            minzoom: 5.5,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-              'line-color': ['get', 'trail_color'],
-              'line-opacity': ['get', 'trail_opacity'],
-              'line-width': ['get', 'trail_width'],
-            },
-          },
-          firstSymbolId,
-        );
-      }
-      // Projection line — dashed arrow ahead of drone
-      if (!map.getLayer('threat-trail-projection')) {
-        originalAddLayer(
-          {
-            id: 'threat-trail-projection',
-            type: 'line',
-            source: 'threat-trails',
-            filter: ['match', ['get', 'trail_kind'], ['projection', 'uncertainty'], true, false],
-            minzoom: 5.5,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-              'line-color': ['get', 'trail_color'],
-              'line-opacity': ['get', 'trail_opacity'],
-              'line-width': ['get', 'trail_width'],
-              'line-dasharray': [3, 3],
-            },
-          },
-          firstSymbolId,
-        );
-      }
 
-      if (!map.getLayer('threat-trail-checkpoint')) {
+      if (!map.getSource('place-search-pin')) {
+        originalAddSource('place-search-pin', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+      }
+      if (!map.getLayer('place-search-pin-halo')) {
         originalAddLayer(
           {
-            id: 'threat-trail-checkpoint',
-            type: 'symbol',
-            source: 'threat-trails',
-            filter: ['==', ['get', 'trail_kind'], 'checkpoint'],
-            minzoom: 6.5,
-            layout: {
-              'text-field': ['get', 'checkpoint_label'],
-              'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
-              'text-size': 10,
-              'text-anchor': 'center',
-              'text-allow-overlap': false,
-              'text-ignore-placement': false,
-            },
+            id: 'place-search-pin-halo',
+            type: 'circle',
+            source: 'place-search-pin',
             paint: {
-              'text-color': ['get', 'trail_color'],
-              'text-halo-color': 'rgba(15, 15, 15, 0.85)',
-              'text-halo-width': 1.5,
+              'circle-radius': 14,
+              'circle-color': '#3b82f6',
+              'circle-opacity': 0.35,
+              'circle-blur': 0.4,
             },
           },
           firstSymbolId,
+        );
+      }
+      if (!map.getLayer('place-search-pin-dot')) {
+        originalAddLayer(
+          {
+            id: 'place-search-pin-dot',
+            type: 'circle',
+            source: 'place-search-pin',
+            paint: {
+              'circle-radius': 6,
+              'circle-color': '#2563eb',
+              'circle-stroke-width': 2,
+              'circle-stroke-color': '#ffffff',
+              'circle-opacity': 0.95,
+            },
+          },
+          'place-search-pin-halo',
         );
       }
 
@@ -1453,7 +1278,6 @@ function MapLibreContainer({
             if (mid) {
               markerFocusMidRef.current = mid;
               applyThreatMarkerFocus(map, mid, NORM_ICON_PX);
-              if (onFocusedTargetIdChange) onFocusedTargetIdChange(m.id || null);
             }
             if (isEmbed && !isAdminRef.current && notifyFlutterThreatMarkerTap(m)) {
               return;
@@ -1530,19 +1354,25 @@ function MapLibreContainer({
             hideMarkerTooltip();
           });
 
-          const initialBounds = isMobile ? MOBILE_FULL_UKRAINE_VIEW_BOUNDS : MAP_BOUNDS;
-          const inset = isMobile ? 54 : 24;
-          map.fitBounds(
-            [
-              [initialBounds.minLng, initialBounds.minLat],
-              [initialBounds.maxLng, initialBounds.maxLat],
-            ],
-            {
-              animate: false,
-              padding: { top: inset, bottom: inset, left: inset, right: inset },
-              maxZoom: isMobile ? 5.25 : 6,
-            },
-          );
+          const pendingGoto = getLastNeptunMapGoto();
+          if (pendingGoto) {
+            queueMicrotask(() => runNeptunMapGotoOnMap(map, pendingGoto));
+          } else if (!initialUkraineFitDoneRef.current) {
+            initialUkraineFitDoneRef.current = true;
+            const initialBounds = isMobile ? MOBILE_FULL_UKRAINE_VIEW_BOUNDS : MAP_BOUNDS;
+            const inset = isMobile ? 54 : 24;
+            map.fitBounds(
+              [
+                [initialBounds.minLng, initialBounds.minLat],
+                [initialBounds.maxLng, initialBounds.maxLat],
+              ],
+              {
+                animate: false,
+                padding: { top: inset, bottom: inset, left: inset, right: inset },
+                maxZoom: isMobile ? 5.25 : 6,
+              },
+            );
+          }
 
           /* WebView (Flutter): після layout інколи 0×0 canvas — один resize після першого idle. */
           const resizeOnce = () => {
@@ -1552,7 +1382,7 @@ function MapLibreContainer({
               /* ignore */
             }
           };
-          if (isEmbed) {
+          if (isMobile) {
             map.once('idle', () => requestAnimationFrame(resizeOnce));
             window.setTimeout(resizeOnce, 320);
           }
@@ -1564,7 +1394,41 @@ function MapLibreContainer({
       })();
     });
 
+    const detachLifecycle = attachMapLifecycleRecovery({
+      map,
+      isMobileLike: isMobile,
+      onHardRecover: () => {
+        const now = Date.now();
+        if (now - hardRecoverCooldownRef.current < 2500) return;
+        hardRecoverCooldownRef.current = now;
+        setMapEpoch((e) => e + 1);
+      },
+    });
+
+    const onMapGoto = (ev: Event) => {
+      const detail = parseNeptunMapGotoEvent(ev);
+      if (!detail) return;
+      const m = mapRef.current;
+      if (!m) return;
+      runNeptunMapGotoOnMap(m, detail);
+    };
+    const onMessageMapGoto = (ev: MessageEvent) => {
+      const data = typeof ev.data === 'string' ? safeParseMessage(ev.data) : ev.data;
+      if (!data || typeof data !== 'object') return;
+      const payload = data as { type?: string; detail?: NeptunMapGotoDetail };
+      if (payload.type !== 'neptun_map_goto' || !payload.detail) return;
+      const m = mapRef.current;
+      if (!m) return;
+      runNeptunMapGotoOnMap(m, payload.detail);
+    };
+    window.addEventListener(NEPTUN_MAP_GOTO, onMapGoto);
+    window.addEventListener('message', onMessageMapGoto);
+
     return () => {
+      window.removeEventListener(NEPTUN_MAP_GOTO, onMapGoto);
+      window.removeEventListener('message', onMessageMapGoto);
+      registerMapController?.(null);
+      detachLifecycle();
       window.removeEventListener('theme-change', onThemeChange);
       window.removeEventListener('resize', onViewportResize);
       window.removeEventListener('orientationchange', onViewportResize);
@@ -1580,7 +1444,7 @@ function MapLibreContainer({
       mapRef.current = null;
       oblastFcRef.current = null;
     };
-  }, [isEmbed]);
+  }, [isEmbed, mapEpoch, registerMapController]);
 
   // Re-apply base style when user changes the basemap
   useEffect(() => {
@@ -1592,69 +1456,47 @@ function MapLibreContainer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemapOverride]);
 
-  // ── Cinematic Lock-on Mode (Continuous Follow) ────────────────────────────────
-  const trackingTargetIdRef = useRef<string | null>(null);
-  const isFlyingToTargetRef = useRef(false);
-
-  // We only need this effect to handle the state changes and initial flyTo.
-  // The actual continuous follow is done in the requestAnimationFrame loop below.
+  /** Place search flyTo + pin — must register impl or HUD search only queues no-op actions. */
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
+    if (!registerMapController) return;
 
-    if (!autoTrack) {
-      trackingTargetIdRef.current = null;
-      isFlyingToTargetRef.current = false;
-      map.easeTo({ pitch: 0, bearing: 0, duration: 1000 });
+    if (!mapReady) {
+      registerMapController(null);
       return;
     }
 
-    const markers = latestMarkersRef.current;
-    const active = markers.filter(
-      m => m.track_state !== 'lost' && m.track_state !== 'stale' && m.lat && m.lng,
-    );
-    if (active.length === 0) return;
-
-    const priority = (m: Marker) => {
-      const t = (m.threat_type || '').toLowerCase();
-      if (t === 'ballistic') return 3;
-      if (t === 'missile' || t === 'raketa') return 2;
-      return 1;
+    const impl: MapControllerImpl = {
+      flyTo: (lat, lng, options) => {
+        const m = mapRef.current;
+        if (!m) return;
+        const detail: NeptunMapGotoDetail = {
+          lat,
+          lng,
+          zoom: options?.zoom,
+          duration: options?.duration,
+        };
+        runNeptunMapGotoOnMap(m, detail);
+      },
+      setSearchPin: (lat, lng, label) => {
+        const m = mapRef.current;
+        if (!m) return;
+        if (m.isStyleLoaded()) setSearchPinOnMap(m, lat, lng, label);
+        else m.once('idle', () => {
+          const c = mapRef.current;
+          if (c) setSearchPinOnMap(c, lat, lng, label);
+        });
+      },
+      clearSearchPin: () => {
+        const m = mapRef.current;
+        const src = m?.getSource('place-search-pin') as maplibregl.GeoJSONSource | undefined;
+        if (!src) return;
+        src.setData({ type: 'FeatureCollection', features: [] });
+      },
     };
 
-    // 1. Try specifically focused target
-    let target = focusedTargetId ? active.find(m => m.id === focusedTargetId || m.track_id === focusedTargetId) : null;
-    
-    // 2. Fallback to existing tracking ref
-    if (!target && trackingTargetIdRef.current) {
-      target = active.find(m => m.id === trackingTargetIdRef.current || m.track_id === trackingTargetIdRef.current);
-    }
-
-    // 3. Pick best new one
-    if (!target) {
-      target = active.reduce((best, m) => priority(m) > priority(best) ? m : best, active[0]);
-    }
-
-    if (target && target.id !== trackingTargetIdRef.current) {
-      trackingTargetIdRef.current = target.id ?? null;
-      isFlyingToTargetRef.current = true;
-
-      // Initial cinematic fly to the target
-      map.flyTo({
-        center: [target.lng, target.lat],
-        zoom: Math.max(map.getZoom(), 8.5),
-        pitch: 62,
-        bearing: (target.course_bearing ?? map.getBearing()) % 360,
-        duration: 2500,
-        essential: true
-      });
-
-      // Once we arrive, let the RAF loop take over with jumpTo
-      map.once('moveend', () => {
-        isFlyingToTargetRef.current = false;
-      });
-    }
-  }, [autoTrack, mapReady, focusedTargetId]);
+    registerMapController(impl);
+    return () => registerMapController(null);
+  }, [mapReady, registerMapController, mapEpoch]);
 
   const applyAlarmPaint = useCallback((alarmsData: Alarm[]) => {
     const map = mapRef.current;
@@ -1793,52 +1635,6 @@ function MapLibreContainer({
           }
         }
 
-        // Update tracking reticle and camera
-        if (autoTrack && trackingTargetIdRef.current) {
-          const target = interpolatedMarkers.find(m => m.id === trackingTargetIdRef.current || m.track_id === trackingTargetIdRef.current);
-          if (target && target.lat && target.lng) {
-            const reticleSrc = map.getSource('tracking-reticle') as maplibregl.GeoJSONSource | undefined;
-            if (reticleSrc && map.isStyleLoaded()) {
-              reticleSrc.setData({
-                type: 'FeatureCollection',
-                features: [{
-                  type: 'Feature',
-                  geometry: { type: 'Point', coordinates: [target.lng, target.lat] },
-                  properties: {}
-                }]
-              });
-              
-              if (map.getLayer('tracking-reticle-ring')) {
-                const pulse = 1.0 + 0.2 * Math.sin(now / 100);
-                map.setPaintProperty('tracking-reticle-ring', 'circle-radius', 24 * pulse);
-                map.setPaintProperty('tracking-reticle-ring', 'circle-stroke-opacity', 0.8 * (1.2 - 0.2 * pulse));
-              }
-            }
-
-            // Sync camera position if we are not currently in the initial flyTo animation
-            if (!isFlyingToTargetRef.current) {
-              const bearing = (target.course_bearing ?? map.getBearing()) % 360;
-              map.jumpTo({
-                center: [target.lng, target.lat],
-                bearing: bearing,
-                pitch: 62
-              });
-            }
-          }
-        } else {
-          // Clear reticle if not tracking
-          const reticleSrc = map.getSource('tracking-reticle') as maplibregl.GeoJSONSource | undefined;
-          if (reticleSrc && map.isStyleLoaded()) {
-            reticleSrc.setData({ type: 'FeatureCollection', features: [] });
-          }
-        }
-
-        const trailFc = markersToTrailsGeoJSON(interpolatedMarkers);
-        const trailSrc = map.getSource('threat-trails') as maplibregl.GeoJSONSource | undefined;
-        if (trailSrc && map.isStyleLoaded()) {
-          trailSrc.setData(trailFc as any);
-        }
-
         const swarmFc = markersToSwarmGeoJSON(interpolatedMarkers);
         const swarmSrc = map.getSource('threat-swarms') as maplibregl.GeoJSONSource | undefined;
         if (swarmSrc && map.isStyleLoaded()) {
@@ -1861,16 +1657,6 @@ function MapLibreContainer({
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
-
-    // Static assets update (trails, arcs, icons) — still handled on marker change
-    const trailSrc = map.getSource('threat-trails') as maplibregl.GeoJSONSource | undefined;
-    if (trailSrc) trailSrc.setData(markersToTrailsGeoJSON(markers) as any);
-
-    const launchData = markersToLaunchGeoJSON(markers);
-    const arcSrc = map.getSource('launch-arcs') as maplibregl.GeoJSONSource | undefined;
-    if (arcSrc) arcSrc.setData(launchData.arcs as any);
-    const siteSrc = map.getSource('launch-sites') as maplibregl.GeoJSONSource | undefined;
-    if (siteSrc) siteSrc.setData(launchData.sites as any);
 
     const jobs = collectIconJobs(markers);
     ensureThreatImages(map, jobs).then(() => {

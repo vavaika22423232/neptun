@@ -13,7 +13,10 @@ function resolvePythonBinary(): string {
   return 'python3';
 }
 
-async function runReplay(text: string): Promise<Record<string, unknown>> {
+async function runReplay(
+  text: string,
+  options: { resolve?: boolean; channel?: string } = {},
+): Promise<Record<string, unknown>> {
   const script = path.join(process.cwd(), 'worker', 'scripts', 'replay_parse.py');
   const stdout = await new Promise<string>((resolve, reject) => {
     const child = spawn(resolvePythonBinary(), [script], {
@@ -57,7 +60,11 @@ async function runReplay(text: string): Promise<Record<string, unknown>> {
         reject(new Error(err || `parser replay exited with code ${code}`));
       }
     });
-    child.stdin.end(JSON.stringify({ text }));
+    child.stdin.end(JSON.stringify({
+      text,
+      resolve: options.resolve === true,
+      channel: options.channel || undefined,
+    }));
   });
   return JSON.parse(stdout) as Record<string, unknown>;
 }
@@ -68,12 +75,14 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const text = (url.searchParams.get('text') || url.searchParams.get('q') || '').trim();
+  const resolve = url.searchParams.get('resolve') === '1' || url.searchParams.get('resolve') === 'true';
+  const channel = (url.searchParams.get('channel') || '').trim();
   if (!text) {
     return NextResponse.json({ status: 'error', error: 'text query param is required' }, { status: 400 });
   }
 
   try {
-    return NextResponse.json(await runReplay(text));
+    return NextResponse.json(await runReplay(text, { resolve, channel }));
   } catch (error) {
     return NextResponse.json({
       status: 'error',
@@ -88,12 +97,14 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const text = typeof body.text === 'string' ? body.text.trim() : '';
+  const resolve = body.resolve === true;
+  const channel = typeof body.channel === 'string' ? body.channel.trim() : '';
   if (!text) {
     return NextResponse.json({ status: 'error', error: 'text is required' }, { status: 400 });
   }
 
   try {
-    return NextResponse.json(await runReplay(text));
+    return NextResponse.json(await runReplay(text, { resolve, channel }));
   } catch (error) {
     return NextResponse.json({
       status: 'error',

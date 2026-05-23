@@ -372,8 +372,9 @@ def resolve(
     )
 
     # ── 2. If no gazetteer results OR best hit is a tiny village, inject external geocoders ──
+    has_curated_local_hit = any(c.source == 'manual_regional_channel' for c in candidates)
     best_pop = max((c.population for c in candidates), default=0)
-    if not candidates or best_pop < 15000:
+    if not candidates or (best_pop < 15000 and not has_curated_local_hit):
         ext_result = None
         ext_used = place_name
         for v in variant_list:
@@ -408,6 +409,9 @@ def resolve(
         near_place = normalize_place_case(
             strip_settlement_prefix(primary_place_token(near_raw))
         )
+    if near_place and is_garbage_place_token(near_place):
+        log.info(f"[RESOLVE] Ignoring garbage near-reference: {near_place!r}")
+        near_place = ''
     if near_place and near_place.lower() not in (place_name.lower(), original_name.lower()):
         near_hits = find_candidates(near_place, oblast_hint, limit=5)
         for nc in near_hits:
@@ -497,6 +501,9 @@ def resolve(
         s, r = scoring.score_candidate(c, entities, channel, prev_events, channel_priors)
         c.score += s
         c.reasons.extend(r)
+        if c.source == 'manual_regional_channel':
+            c.score += 50.0
+            c.reasons.append('curated_local_place')
 
     # ── 6. Apply rules (polygon/bbox validation) ──
     for c in candidates:

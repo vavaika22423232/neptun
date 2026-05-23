@@ -59,3 +59,27 @@ jobs:
       - name: Run domain tests
         working-directory: nextjs-app
         run: npm run test:domain
+
+  flutter-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+          cache-key: flutter-${{ hashFiles('neptun_alarm_app/pubspec.lock') }}
+
+      - name: No duplicate dart filenames
+        working-directory: neptun_alarm_app
+        run: dart run scripts/check_no_duplicate_dart.dart
+
+      - name: flutter analyze
+        working-directory: neptun_alarm_app
+        run: flutter analyze --no-fatal-infos
+
+      - name: flutter test
+        working-directory: neptun_alarm_app
+        run: flutter test

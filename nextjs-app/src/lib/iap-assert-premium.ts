@@ -19,14 +19,30 @@ const APPLE_ROOT_CA_G3_FINGERPRINT =
   '63:34:3A:BF:B8:9A:6A:03:EB:B5:7E:9B:3F:5F:A7:BE:7C:4F:5C:75:6F:30:17:B3:A8:C4:88:C3:65:3E:91:79';
 
 export const KNOWN_PREMIUM_PRODUCT_IDS = [
+  'neptun_pro_monthly_69',
+  'neptun_pro_plus_monthly_129',
+  'neptun_max_monthly_199',
+  'pro_monthly',
   'premium_150_uah',
   'premium_100_uah',
   'premium',
   'com.neptunalarm.premium',
 ];
 
+/** Monthly subscription SKUs — verified via subscriptions API, not products.get */
+export const SUBSCRIPTION_PRODUCT_IDS = [
+  'neptun_pro_monthly_69',
+  'neptun_pro_plus_monthly_129',
+  'neptun_max_monthly_199',
+  'pro_monthly',
+];
+
+export function isSubscriptionProductId(productId: string): boolean {
+  return SUBSCRIPTION_PRODUCT_IDS.includes(productId);
+}
+
 export type PremiumAssertResult =
-  | { kind: 'valid' }
+  | { kind: 'valid'; expiresAt?: string | null }
   | { kind: 'invalid' }
   | { kind: 'pending' }
   | { kind: 'transient' }
@@ -91,6 +107,87 @@ async function assertGooglePremium(
   if (purchaseState === 0) return { kind: 'valid' };
   console.log(`[IAP] Google invalid purchaseState=${purchaseState}`);
   return { kind: 'invalid' };
+}
+
+function parseGoogleExpiryMillis(data: {
+  expiryTimeMillis?: string | null;
+  lineItems?: Array<{ expiryTime?: string | null }>;
+}): string | null {
+  if (data.expiryTimeMillis) {
+    const n = Number(data.expiryTimeMillis);
+    if (Number.isFinite(n) && n > 0) return new Date(n).toISOString();
+  }
+  const line = data.lineItems?.[0]?.expiryTime;
+  if (line) {
+    const d = new Date(line);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return null;
+}
+
+async function assertGoogleSubscription(
+  productId: string,
+  purchaseToken: string,
+): Promise<PremiumAssertResult> {
+  const credsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!credsPath) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[IAP] GOOGLE_APPLICATION_CREDENTIALS missing in production');
+      return { kind: 'misconfigured' };
+    }
+    return { kind: 'misconfigured' };
+  }
+
+  const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+  });
+  const authClient = await auth.getClient();
+  const pub = androidpublisher({
+    version: 'v3',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    auth: authClient as any,
+  });
+
+  try {
+    const sub = await pub.purchases.subscriptionsv2.get({
+      packageName: PACKAGE_NAME,
+      token: purchaseToken,
+    });
+    const data = sub.data;
+    const state = data.subscriptionState;
+    const expiresAt = parseGoogleExpiryMillis(data);
+
+    if (state === 'SUBSCRIPTION_STATE_ACTIVE' || state === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD') {
+      return { kind: 'valid', expiresAt };
+    }
+    if (state === 'SUBSCRIPTION_STATE_PENDING') {
+      return { kind: 'pending' };
+    }
+    console.log(`[IAP] Google subscription state=${state}`);
+    return { kind: 'invalid' };
+  } catch (err) {
+    if (isGooglePurchaseNotFound(err)) {
+      try {
+        const legacy = await pub.purchases.subscriptions.get({
+          packageName: PACKAGE_NAME,
+          subscriptionId: productId,
+          token: purchaseToken,
+        });
+        const d = legacy.data;
+        const paymentState = d.paymentState ?? -1;
+        if (paymentState === 0 || paymentState === 1) {
+          const exp = d.expiryTimeMillis ? new Date(Number(d.expiryTimeMillis)).toISOString() : null;
+          return { kind: 'valid', expiresAt: exp };
+        }
+        if (paymentState === 2) return { kind: 'pending' };
+        return { kind: 'invalid' };
+      } catch (legacyErr) {
+        if (isGooglePurchaseNotFound(legacyErr)) return { kind: 'invalid' };
+      }
+    }
+    console.error('[IAP] Google subscription API error:', err);
+    return { kind: 'transient' };
+  }
 }
 
 async function callAppleVerifyReceipt(
@@ -227,6 +324,10 @@ export async function assertPremiumPurchase(
 
   if (source === 'app_store') {
     return assertApplePremium(productId, purchaseToken);
+  }
+
+  if (isSubscriptionProductId(productId)) {
+    return assertGoogleSubscription(productId, purchaseToken);
   }
 
   return assertGooglePremium(productId, purchaseToken);

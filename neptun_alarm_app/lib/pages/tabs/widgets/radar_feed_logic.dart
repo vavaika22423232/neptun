@@ -46,7 +46,7 @@ List<RadarFeedEntry> buildSortedRadarFeedEntries(
 }) {
   final filtered = filter == RadarQuickFilter.all
       ? markers
-      : markers.where((m) => filter.matchesMarker(m)).toList();
+      : markers.where((m) => filter.matchesMarker(m)).toList(); // legacy list API
 
   final out = <RadarFeedEntry>[];
   for (final m in filtered) {

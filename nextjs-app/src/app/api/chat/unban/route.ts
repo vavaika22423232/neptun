@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
-import { isModeratorDevice } from '@/lib/admin/data';
 import { ChatUnbanUserSchema } from '@/lib/api-schemas';
 import { unbanChatUser } from '@/lib/chat-ban-service';
+import { requireModeratorAuth } from '@/lib/moderator-auth';
 
 /**
  * POST /api/chat/unban
- * Unban a user from chat (moderator action).
- * Requires moderator deviceId in body.
+ * Moderator or admin only.
  */
 export async function POST(request: Request) {
   try {
+    const mod = await requireModeratorAuth(request);
+    if (!mod.ok) return mod.response;
+
     const parsed = ChatUnbanUserSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -17,12 +19,8 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const { nickname, deviceId, targetDeviceId, hardwareId } = parsed.data;
+    const { nickname, targetDeviceId, hardwareId } = parsed.data;
 
-    // Auth: only moderators can unban
-    if (!deviceId || !isModeratorDevice(deviceId)) {
-      return NextResponse.json({ error: 'Доступ заборонено' }, { status: 403 });
-    }
     if (!nickname && !targetDeviceId && !hardwareId) {
       return NextResponse.json(
         { error: 'nickname, targetDeviceId or hardwareId is required' },
@@ -36,7 +34,9 @@ export async function POST(request: Request) {
       hardwareId,
     });
 
-    console.log(`[CHAT] Unbanned: ${nickname || targetDeviceId || hardwareId} by ${deviceId}`);
+    const actor =
+      mod.via === 'moderator' ? mod.identity.deviceId.slice(0, 8) : 'admin';
+    console.log(`[CHAT] Unbanned by ${actor}`);
     return NextResponse.json({ status: 'ok', removed });
   } catch (err) {
     console.error('[CHAT] Unban error:', err);

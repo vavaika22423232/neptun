@@ -762,6 +762,9 @@ class ChatService {
     if (_deviceId == null) return false;
     try {
       final body = <String, dynamic>{'deviceId': _deviceId};
+      if (_nickname != null && _nickname!.trim().isNotEmpty) {
+        body['nickname'] = _nickname!.trim();
+      }
       if (_hardwareId != null) body['hardwareId'] = _hardwareId;
       final resp = await http
           .post(
@@ -827,48 +830,30 @@ class ChatService {
         return false;
       }
     }
-    return banUser(nickname, reason: reason, targetDeviceId: null);
+    final result = await banUser(nickname, reason: reason, targetDeviceId: null);
+    return result.success;
   }
 
-  Future<bool> banUser(
+  Future<({bool success, String? error})> banUser(
     String nickname, {
     String? reason,
     String? targetDeviceId,
   }) async {
-    // Prefer admin API when we have secret + targetDeviceId (more reliable, bans by device)
-    final secret = await ModeratorService.instance.getSecret();
-    if (secret != null &&
-        secret.isNotEmpty &&
-        targetDeviceId != null &&
-        targetDeviceId.isNotEmpty) {
-      try {
-        final resp = await http
-            .post(
-              Uri.parse(ApiConfig.adminChatBanUser),
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Auth-Secret': secret,
-              },
-              body: json.encode({
-                'nickname': nickname,
-                'deviceId': targetDeviceId,
-                'reason': reason ?? 'Порушення правил',
-              }),
-            )
-            .timeout(ApiConfig.httpTimeout);
-        return resp.statusCode == 200;
-      } catch (_) {
-        return false;
-      }
+    if (_deviceId == null) {
+      return (success: false, error: 'Немає device ID');
     }
-    // Fallback: regular chat ban (looks up device_id from nicknames)
     try {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      final secret = await ModeratorService.instance.getSecret();
+      if (secret != null && secret.isNotEmpty) {
+        headers['X-Auth-Secret'] = secret;
+      }
       final resp = await http
           .post(
             Uri.parse(ApiConfig.chatBanUser),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: json.encode({
-              'nickname': nickname,
+              'nickname': nickname.trim(),
               'deviceId': _deviceId,
               if (targetDeviceId != null && targetDeviceId.isNotEmpty)
                 'targetDeviceId': targetDeviceId,
@@ -876,9 +861,17 @@ class ChatService {
             }),
           )
           .timeout(ApiConfig.httpTimeout);
-      return resp.statusCode == 200;
+      final data = _tryDecodeJson(resp.body);
+      if (resp.statusCode == 200) {
+        return (success: true, error: null);
+      }
+      return (
+        success: false,
+        error: data?['error']?.toString() ??
+            'Помилка блокування (${resp.statusCode})',
+      );
     } catch (_) {
-      return false;
+      return (success: false, error: 'Помилка з\'єднання');
     }
   }
 

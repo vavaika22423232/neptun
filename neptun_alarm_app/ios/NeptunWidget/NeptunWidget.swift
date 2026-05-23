@@ -150,7 +150,7 @@ struct NeptunWidgetView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .widgetURL(URL(string: "neptun://open_app"))
+        .widgetURL(URL(string: "neptun://alarm?open=radar"))
     }
 }
 

@@ -122,6 +122,26 @@ function bearingFromTrajectory(marker: Marker, traj: Trajectory): number | null 
   return null;
 }
 
+function bearingFromTrackerTarget(marker: Marker): number | null {
+  const target = marker.tracker_target;
+  if (!target || target.length < 2) return null;
+  const lat = Number(marker.lat);
+  const lng = Number(marker.lng);
+  const targetLat = Number(target[0]);
+  const targetLng = Number(target[1]);
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    !Number.isFinite(targetLat) ||
+    !Number.isFinite(targetLng)
+  ) {
+    return null;
+  }
+  const dist = haversineKm(lat, lng, targetLat, targetLng);
+  if (dist < MIN_TRACK_SEGMENT_KM) return null;
+  return initialBearingDeg(lat, lng, targetLat, targetLng);
+}
+
 function bearingFromCardinalText(raw: string | undefined): number | null {
   if (!raw || typeof raw !== 'string') return null;
   const key = raw.toLowerCase().trim();
@@ -136,6 +156,24 @@ function bearingFromCardinalText(raw: string | undefined): number | null {
  * Best-effort true bearing for the threat movement direction.
  */
 export function resolveThreatBearingDeg(marker: Marker): number | null {
+  const preferTargetBearing =
+    marker.last_observation_quality === 'target_hint' ||
+    marker.tracker_truth?.coordinate_role === 'target' ||
+    marker.tracker_truth?.public_position_policy === 'hold_existing' ||
+    marker.placement_mode === 'target_only_no_current_position' ||
+    marker.resolve_status === 'trajectory_approach' ||
+    marker.resolve_status === 'predictive_approach';
+
+  if (preferTargetBearing) {
+    const traj = marker.trajectory;
+    if (traj) {
+      const fromTraj = bearingFromTrajectory(marker, traj);
+      if (fromTraj != null) return fromTraj;
+    }
+    const fromTrackerTarget = bearingFromTrackerTarget(marker);
+    if (fromTrackerTarget != null) return fromTrackerTarget;
+  }
+
   const fromTrack = bearingFromPositions(marker);
   if (fromTrack != null) return fromTrack;
 

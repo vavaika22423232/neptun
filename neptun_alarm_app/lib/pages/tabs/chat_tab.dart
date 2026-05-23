@@ -818,6 +818,50 @@ class _ChatTabState extends State<ChatTab> with AutomaticKeepAliveClientMixin {
     }
   }
 
+  Future<void> _banChatUser(ChatMessage msg) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Заблокувати в чаті?',
+          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          '${msg.userId} не зможе надсилати повідомлення.',
+          style: GoogleFonts.inter(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Скасувати'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Заблокувати'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await _chat.banUser(
+      msg.userId,
+      targetDeviceId: msg.deviceId.isNotEmpty ? msg.deviceId : null,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.success
+              ? '${msg.userId} заблоковано'
+              : (result.error ?? 'Не вдалося заблокувати'),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: result.success ? null : Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
   void _blockUser(ChatMessage msg) {
     showDialog(
       context: context,
@@ -1598,7 +1642,7 @@ class _ChatTabState extends State<ChatTab> with AutomaticKeepAliveClientMixin {
           onReact: (emoji) => _chat.react(msg.id, emoji),
           onDelete: () => _chat.deleteMessage(msg.id),
           onBan: _chat.isModerator
-              ? () => _chat.banUser(msg.userId, targetDeviceId: msg.deviceId)
+              ? () => _banChatUser(msg)
               : null,
           onReport: isMine ? null : () => _reportMessage(msg),
           onBlock: isMine ? null : () => _blockUser(msg),

@@ -9,6 +9,7 @@ import { isBanned, isModeratorDevice } from '@/lib/admin/data';
 import { validateImageMagicBytes } from '@/lib/api-schemas';
 import { requireChatAuth } from '@/lib/chat-auth';
 import { containsForbiddenText } from '@/lib/chat-forbidden';
+import { resolveEntitlementsForDevice } from '@/lib/monetization/entitlement-store';
 
 function escapeHtml(text: string): string {
   return text
@@ -65,7 +66,8 @@ export async function POST(request: Request) {
     const hardwareId = formData.get('hardwareId')?.toString() || formData.get('hardware_id')?.toString();
     const rawCaption = (formData.get('message') || formData.get('caption'))?.toString()?.trim() || '';
     const caption = escapeHtml(rawCaption).trim();
-    const isPro = formData.get('isPro')?.toString() === 'true';
+    const entitlements = await resolveEntitlementsForDevice(deviceId);
+    const isPro = entitlements.isPro;
     const imageFile = formData.get('image') as File | null;
 
     if (!imageFile) {

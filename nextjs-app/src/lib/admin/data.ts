@@ -2,6 +2,7 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import { anonymousGuestLabel, getNicknameForDevice } from '@/lib/chat-nicknames';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
@@ -271,11 +272,28 @@ export function isBanned(
 ): BanEntry | null {
   const bans = loadChatBans();
   const now = new Date();
+  const nicknamesToCheck = new Set<string>();
+  const addNick = (value?: string) => {
+    const t = (value || '').trim().toLowerCase();
+    if (t) nicknamesToCheck.add(t);
+  };
+  addNick(nickname);
+  if (deviceId) {
+    addNick(getNicknameForDevice(deviceId) ?? undefined);
+    addNick(anonymousGuestLabel(deviceId));
+    for (const ban of bans) {
+      if (ban.device_id === deviceId && ban.nickname) {
+        addNick(ban.nickname);
+      }
+    }
+  }
+
   const found = bans.find((b) => {
     if (b.expires_at && new Date(b.expires_at) < now) return false;
+    const banNick = (b.nickname || '').trim().toLowerCase();
     return (
       (deviceId && b.device_id && b.device_id === deviceId) ||
-      (nickname && b.nickname && b.nickname.toLowerCase() === nickname.toLowerCase()) ||
+      (banNick && nicknamesToCheck.has(banNick)) ||
       (hardwareId && b.hardware_id && b.hardware_id === hardwareId)
     );
   });

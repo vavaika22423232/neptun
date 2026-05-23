@@ -99,7 +99,15 @@ export const OBLAST_CENTERS: Record<string, [number, number]> = {
 export const ACTIVE_POLLING_INTERVAL = 180_000; // 3min when tab is active (SSE triggers real-time)
 export const HIDDEN_POLLING_INTERVAL_DESKTOP = 300_000; // 5min when tab is hidden (desktop)
 export const HIDDEN_POLLING_INTERVAL_MOBILE = 180_000; // 3min when tab is hidden (mobile)
-export const PRESENCE_INTERVAL = 300_000; // 5min heartbeat POST (Redis ZADD — не частити)
+/** Активна вкладка: рідкий POST у Redis (ZADD). */
+export const PRESENCE_INTERVAL = 300_000; // 5 min
+/** Вкладка згорнута / інша вкладка — рідший, але регулярний пінг (сесія відкрита). */
+export const PRESENCE_BACKGROUND_INTERVAL = 120_000; // 2 min
+/**
+ * Скільки тримати користувача в «онлайн» після останнього пінгу.
+ * Має бути > PRESENCE_INTERVAL і > PRESENCE_BACKGROUND_INTERVAL + запас на мережу.
+ */
+export const PRESENCE_VISITOR_TIMEOUT_MS = 900_000; // 15 min
 /** Як часто підтягувати лічильник «Онлайн» у HUD (лише читання Redis). */
 export const PRESENCE_DISPLAY_POLL_MS = 5_000;
 export const MARKERS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes localStorage cache

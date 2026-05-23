@@ -33,8 +33,24 @@ export interface TargetAssociationDebug {
   bearing_penalty: number;
   corridor_penalty: number;
   innovation_penalty: number;
+  quality_penalty?: number;
+  group_bonus?: number;
+  text_intent?: string;
+  observation_quality?: string;
   accepted: boolean;
   reason: string;
+}
+
+export interface MarkerTrackerTruth {
+  reported_position?: TrackPosition;
+  fused_position?: TrackPosition;
+  predicted_position?: TrackPosition;
+  coordinate_role?: 'observation' | 'target' | 'area_centroid' | 'estimated_path';
+  public_position_policy?: 'precise_pin' | 'hold_existing' | 'zone_only' | 'suppress_or_admin_only';
+  observation_quality?: 'observed' | 'estimated' | 'coarse' | 'target_hint';
+  text_intent?: 'single' | 'group' | 'additional' | 'loss' | 'unknown';
+  confidence_radius_km?: number;
+  reasons?: string[];
 }
 
 export interface Marker {
@@ -167,6 +183,12 @@ export interface Marker {
   predicted_position?: TrackPosition;
   last_measurement?: TrackPosition;
   last_association?: TargetAssociationDebug;
+  /** Quality of the latest accepted tracker observation: direct point, estimated, coarse, or target-only hint. */
+  last_observation_quality?: 'observed' | 'estimated' | 'coarse' | 'target_hint';
+  /** Text-level intent inferred by tracker: single target, group, additional target, loss report, or unknown. */
+  last_text_intent?: 'single' | 'group' | 'additional' | 'loss' | 'unknown';
+  /** Honest radar semantics for debug/admin/public UI: raw report vs fused/predicted position and display policy. */
+  tracker_truth?: MarkerTrackerTruth;
   association_score?: number;
   association_reason?: string;
   /** Renderer-computed trail [[lat,lng],…] oldest→newest (P3-A) */
@@ -175,6 +197,16 @@ export interface Marker {
   tracker_target?: [number, number] | null;
   /** How the lat/lng was derived: 'ekf' | 'raw' */
   position_source?: string;
+  /** Radar truthfulness state: observed=fresh evidence, coasting=physics projection, estimated=target-only, stale/lost=no fresh track. */
+  radar_state?: 'observed' | 'estimated' | 'coasting' | 'stale' | 'lost' | 'manual';
+  /** 1-sigma-ish uncertainty radius for current rendered position. */
+  uncertainty_radius_km?: number;
+  /** Evidence tier used by public/admin UI. */
+  evidence_level?: 'manual' | 'priority_source' | 'multi_source' | 'single_source';
+  /** Last real observation timestamp, not advanced by render extrapolation. */
+  last_real_observation_at?: number;
+  /** Timestamp when server computed the rendered radar position. */
+  last_render_update_at?: number;
   /** Composite track quality index 0–100 (obs density + EKF health + source diversity). */
   tqi?: number;
   /** Resolved GADM HASC_1 oblast code for the current tracker position. */
@@ -220,7 +252,7 @@ export interface Trajectory {
   start?: [number, number];
   end?: [number, number];
   predicted?: boolean;
-  source?: 'direction' | 'cardinal' | 'correlation' | 'ai' | 'ai_analyzer' | 'heuristic' | 'ekf_projection';
+  source?: 'direction' | 'cardinal' | 'correlation' | 'ai' | 'ai_analyzer' | 'heuristic' | 'ekf_projection' | 'target_city' | 'group_bearing';
   prediction_confidence?: number;
   waypoints?: [number, number][];   // intermediate points for sea/complex routes
   flight_phase?: 'launch' | 'cruise' | 'approach' | 'circling';

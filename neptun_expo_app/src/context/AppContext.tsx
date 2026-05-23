@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { endpoints } from '../config/api';
 import { chatService } from '../services/chatService';
 import { purchaseService } from '../services/purchaseService';
 import { storage } from '../services/storage';
-import { apiRequest } from '../services/apiClient';
+import { alarmsDataService } from '../services/alarmsDataService';
 import { hydrateSleepMode } from '../services/sleepModeStore';
 import { parseAlarmsPayload, syncAlarmStatsFromRows } from '../services/alarmStatsService';
 
@@ -37,27 +36,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    void purchaseService.initialize();
+    const unsubPurchase = purchaseService.subscribe(() => {
+      void purchaseService.isPremium().then(setPremiumState);
+    });
     refreshIdentity().catch(() => undefined);
     void hydrateSleepMode();
-    void (async () => {
+    const syncAlarms = async (force = false) => {
       try {
-        const data = await apiRequest<unknown>(endpoints.alarmsAll, { timeoutMs: 15_000 });
+        const data = await alarmsDataService.fetchRaw(force);
         await syncAlarmStatsFromRows(parseAlarmsPayload(data));
       } catch {
         /* offline */
       }
-    })();
-    const id = setInterval(() => {
-      void (async () => {
-        try {
-          const data = await apiRequest<unknown>(endpoints.alarmsAll, { timeoutMs: 15_000 });
-          await syncAlarmStatsFromRows(parseAlarmsPayload(data));
-        } catch {
-          /* ignore */
-        }
-      })();
-    }, 180_000);
-    return () => clearInterval(id);
+    };
+    void syncAlarms();
+    const id = setInterval(() => void syncAlarms(true), 180_000);
+    return () => {
+      clearInterval(id);
+      unsubPurchase();
+    };
   }, []);
 
   const value = useMemo<AppState>(

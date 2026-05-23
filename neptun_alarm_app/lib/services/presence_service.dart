@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
@@ -8,7 +9,8 @@ import '../config/app_constants.dart';
 import 'auth_service.dart';
 
 /// Пінг `/api/presence` з `platform: app` — той самий лічильник, що й на сайті (web + app у Redis).
-class PresenceService {
+/// У фоні пінгує рідше, але не зникає з «онлайн», поки процес живий.
+class PresenceService with WidgetsBindingObserver {
   PresenceService._();
   static final PresenceService instance = PresenceService._();
 
@@ -21,16 +23,40 @@ class PresenceService {
   void start() {
     if (_started) return;
     _started = true;
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_ping());
-    _timer = Timer.periodic(AppConstants.presencePingInterval, (_) {
-      unawaited(_ping());
-    });
+    _scheduleNextPing();
   }
 
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _timer = null;
     _started = false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_ping());
+    }
+    if (_started) _scheduleNextPing();
+  }
+
+  Duration _heartbeatDelay() {
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state == AppLifecycleState.resumed) {
+      return AppConstants.presencePingInterval;
+    }
+    return AppConstants.presenceBackgroundPingInterval;
+  }
+
+  void _scheduleNextPing() {
+    _timer?.cancel();
+    _timer = Timer(_heartbeatDelay(), () {
+      unawaited(_ping());
+      if (_started) _scheduleNextPing();
+    });
   }
 
   Future<void> _ping() async {

@@ -113,6 +113,52 @@ class WidgetService {
     }
   }
 
+  /// Синхронізація віджета після оновлення Радару (кількість тривог + загроз).
+  Future<void> syncFromRadarSnapshot({
+    required List<Map<String, dynamic>> markers,
+    required int activeOblastsUnderAlarm,
+  }) async {
+    if (!(Platform.isAndroid || Platform.isIOS)) return;
+    if (!_isPremium) {
+      await _showPremiumRequired();
+      return;
+    }
+
+    var drones = 0;
+    var missiles = 0;
+    var kab = 0;
+    var ballistic = 0;
+    for (final m in markers) {
+      final t =
+          (m['threatType'] ?? m['threat_type'] ?? m['type'] ?? '')
+              .toString()
+              .toLowerCase();
+      if (t.contains('shahed') || t.contains('drone') || t.contains('fpv')) {
+        drones++;
+      } else if (t.contains('raketa') || t.contains('missile')) {
+        missiles++;
+      } else if (t.contains('kab')) {
+        kab++;
+      } else if (t.contains('ballistic')) {
+        ballistic++;
+      }
+    }
+
+    final region = await getUserRegion() ?? 'Україна';
+    await updateWidget(
+      region: region,
+      isAlarm: activeOblastsUnderAlarm > 0,
+      threatsCount: markers.length,
+      timerMinutes: 0,
+      totalAlarms: activeOblastsUnderAlarm,
+      dronesCount: drones,
+      missilesCount: missiles,
+      kabCount: kab,
+      ballisticCount: ballistic,
+      totalThreats: markers.length,
+    );
+  }
+
   /// Оновити тільки статус тривоги
   Future<void> updateAlarmStatus({
     required bool isAlarm,

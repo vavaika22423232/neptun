@@ -11,6 +11,39 @@ try {
 
 const uaRasterCsp = uaRasterOrigin ? ` ${uaRasterOrigin}` : '';
 
+/** Pages with ?embed=1 (app WebView, Expo web iframe, partner widgets). */
+const embedFrameAncestors =
+  "frame-ancestors 'self' https://neptun.in.ua http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*";
+
+function buildContentSecurityPolicy(frameAncestors: string): string {
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://unpkg.com https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net",
+    `img-src 'self' data: blob: https://s3.amazonaws.com https://*.google.com https://*.openfreemap.org https://tiles.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com${uaRasterCsp} https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com`,
+    `connect-src 'self' https://s3.amazonaws.com https://neptun.in.ua wss://neptun.in.ua https://*.google.com https://*.google-analytics.com https://*.googleapis.com https://tiles.openfreemap.org https://*.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com${uaRasterCsp} https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com`,
+    "font-src 'self' https://fonts.gstatic.com",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+    frameAncestors,
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
+const sharedSecurityHeaders = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
+  },
+  {
+    key: 'Permissions-Policy',
+    value: 'camera=(), microphone=(), geolocation=(self), payment=()',
+  },
+] as const;
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
 
@@ -30,33 +63,24 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/:path*',
+        missing: [{ type: 'query', key: 'embed', value: '1' }],
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload',
-          },
-          {
-            key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=(self), payment=()',
-          },
+          ...sharedSecurityHeaders,
           {
             key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://unpkg.com https://cdn.jsdelivr.net",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://cdn.jsdelivr.net",
-              `img-src 'self' data: blob: https://s3.amazonaws.com https://*.google.com https://*.openfreemap.org https://tiles.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com${uaRasterCsp} https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com`,
-              `connect-src 'self' https://s3.amazonaws.com https://neptun.in.ua wss://neptun.in.ua https://*.google.com https://*.google-analytics.com https://*.googleapis.com https://tiles.openfreemap.org https://*.openfreemap.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com${uaRasterCsp} https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org https://mt1.google.com https://mt2.google.com https://mt3.google.com`,
-              "font-src 'self' https://fonts.gstatic.com",
-              "worker-src 'self' blob:",
-              "child-src 'self' blob:",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join('; '),
+            value: buildContentSecurityPolicy("frame-ancestors 'none'"),
+          },
+        ],
+      },
+      {
+        source: '/:path*',
+        has: [{ type: 'query', key: 'embed', value: '1' }],
+        headers: [
+          ...sharedSecurityHeaders,
+          {
+            key: 'Content-Security-Policy',
+            value: buildContentSecurityPolicy(embedFrameAncestors),
           },
         ],
       },

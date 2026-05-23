@@ -381,7 +381,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* Global theme detection — MUST run synchronously before any React script to prevent FOUC */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var r=document.documentElement;var c=r.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t)t='dark';function applyT(theme){var light=theme==='light';if(light){c.remove('dark');c.add('theme-light');r.style.colorScheme='light';}else{c.remove('theme-light');c.add('dark');r.style.colorScheme='dark';}var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',light?'#f5f7fa':'#0a0a0b');window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){applyT(e.matches?'light':'dark');});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
+            __html: `(function(){try{var r=document.documentElement;var c=r.classList;var q=new URLSearchParams(window.location.search);var t=q.get('theme')||localStorage.getItem('theme');var p=window.location.pathname;var isApp=q.get('embed')==='1'||p.includes('export')||p.includes('map_only')||navigator.userAgent.includes('wv')||navigator.userAgent.includes('WebView');if(p.includes('export-light'))t='light';else if(p.includes('export')||p.includes('map_only'))t='dark';if(!t)t='dark';function applyT(theme){var light=theme==='light';if(light){c.remove('dark');c.add('theme-light');r.style.colorScheme='light';}else{c.remove('theme-light');c.add('dark');r.style.colorScheme='dark';}var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',light?'#f5f7fa':'#0a0a0b');window.dispatchEvent(new Event('theme-change'));}applyT(t);if(isApp){var themeDebounce=null;window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(e){clearTimeout(themeDebounce);themeDebounce=setTimeout(function(){applyT(e.matches?'light':'dark');},500);});}if(isApp||q.get('embed')==='1')c.add('embed-mode');window.setNeptunTheme=function(theme){applyT(theme);};window.setTheme=window.setNeptunTheme;}catch(e){}})();`,
           }}
         />
 
@@ -453,15 +453,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ))}
       </head>
       <body className="font-mono bg-[#f5f7fa] text-gray-900 dark:bg-[#050505] dark:text-white/80 antialiased selection:bg-[#ff2a5f]/30 relative transition-colors duration-300">
-        {/* Global Maintenance Notice */}
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-[10000] flex justify-center pt-1.5 sm:pt-2">
-          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 shadow-sm backdrop-blur-md sm:px-4">
-            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500/90 sm:text-[11px]">
-              Технічні роботи
-            </span>
-          </div>
-        </div>
 
         {/* Body flat; атмосфера карти — MapAtmosphereOverlay у AppShell (без full-screen blur) */}
         {children}
